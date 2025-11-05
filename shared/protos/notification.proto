@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package notification;
+
+service NotificationService {
+  rpc GetNotifications(GetNotificationsRequest) returns (GetNotificationsResponse);
+  rpc MarkAsRead(MarkAsReadRequest) returns (MarkAsReadResponse);
+  rpc MarkAllAsRead(MarkAllAsReadRequest) returns (MarkAllAsReadResponse);
+  rpc GetUnreadCount(GetUnreadCountRequest) returns (GetUnreadCountResponse);
+  rpc UpdatePreferences(UpdatePreferencesRequest) returns (UpdatePreferencesResponse);
+  rpc GetPreferences(GetPreferencesRequest) returns (GetPreferencesResponse);
+}
+
+message GetNotificationsRequest {
+  string user_id = 1;
+  int32 page = 2;
+  int32 limit = 3;
+  bool unread_only = 4;
+}
+
+message NotificationResponse {
+  string id = 1;
+  string user_id = 2;
+  string type = 3;
+  string related_id = 4;
+  string actor_id = 5;
+  bool read = 6;
+  string read_at = 7;
+  string created_at = 8;
+  map<string, string> metadata = 9;
+}
+
+message GetNotificationsResponse {
+  repeated NotificationResponse notifications = 1;
+  int32 total = 2;
+  int32 unread_count = 3;
+  int32 page = 4;
+}
+
+message MarkAsReadRequest {
+  string user_id = 1;
+  string notification_id = 2;
+}
+
+message MarkAsReadResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message MarkAllAsReadRequest {
+  string user_id = 1;
+}
+
+message MarkAllAsReadResponse {
+  bool success = 1;
+  int32 marked_count = 2;
+}
+
+message GetUnreadCountRequest {
+  string user_id = 1;
+}
+
+message GetUnreadCountResponse {
+  int32 unread_count = 1;
+}
+
+message UpdatePreferencesRequest {
+  string user_id = 1;
+  string type = 2; // e.g., "post.liked", "post.commented"
+  bool email_enabled = 3;
+  bool push_enabled = 4;
+}
+
+message UpdatePreferencesResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GetPreferencesRequest {
+  string user_id = 1;
+}
+
+message GetPreferencesResponse {
+  repeated NotificationPreference preferences = 1;
+}
+
+message NotificationPreference {
+  string type = 1;
+  bool email_enabled = 2;
+  bool push_enabled = 3;
+}
+
+
+
+

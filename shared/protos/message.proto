@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+package message;
+
+service MessageService {
+  rpc CreateConversation(CreateConversationRequest) returns (ConversationResponse);
+  rpc GetConversations(GetConversationsRequest) returns (GetConversationsResponse);
+  rpc GetConversation(GetConversationRequest) returns (ConversationResponse);
+  rpc SendMessage(SendMessageRequest) returns (MessageResponse);
+  rpc GetMessages(GetMessagesRequest) returns (GetMessagesResponse);
+  rpc ReplyToMessage(ReplyToMessageRequest) returns (MessageResponse);
+  rpc SharePost(SharePostRequest) returns (MessageResponse);
+  rpc AddParticipant(AddParticipantRequest) returns (AddParticipantResponse);
+  rpc RemoveParticipant(RemoveParticipantRequest) returns (RemoveParticipantResponse);
+}
+
+message CreateConversationRequest {
+  string type = 1; // "direct" or "group"
+  string name = 2; // required for groups
+  repeated string participant_ids = 3;
+}
+
+message ConversationResponse {
+  string id = 1;
+  string type = 2;
+  string name = 3;
+  repeated Participant participants = 4;
+  MessageResponse last_message = 5;
+  string created_at = 6;
+}
+
+message Participant {
+  string user_id = 1;
+  string role = 2; // "admin" or "member"
+  string joined_at = 3;
+}
+
+message GetConversationsRequest {
+  string user_id = 1;
+  int32 page = 2;
+  int32 limit = 3;
+}
+
+message GetConversationsResponse {
+  repeated ConversationResponse conversations = 1;
+  int32 total = 2;
+  int32 page = 3;
+}
+
+message GetConversationRequest {
+  string conversation_id = 1;
+}
+
+message SendMessageRequest {
+  string conversation_id = 1;
+  string sender_id = 2;
+  string content = 3;
+}
+
+message MessageResponse {
+  string id = 1;
+  string conversation_id = 2;
+  string sender_id = 3;
+  string content = 4;
+  MessageResponse reply_to = 5; // if replying to message
+  PostResponse shared_post = 6; // if sharing post
+  string created_at = 7;
+}
+
+message GetMessagesRequest {
+  string conversation_id = 1;
+  int32 page = 2;
+  int32 limit = 3;
+}
+
+message GetMessagesResponse {
+  repeated MessageResponse messages = 1;
+  int32 total = 2;
+  int32 page = 3;
+}
+
+message ReplyToMessageRequest {
+  string conversation_id = 1;
+  string sender_id = 2;
+  string content = 3;
+  string reply_to_message_id = 4;
+}
+
+message SharePostRequest {
+  string conversation_id = 1;
+  string sender_id = 2;
+  string post_id = 3;
+  string message = 4; // optional text with share
+}
+
+message AddParticipantRequest {
+  string conversation_id = 1;
+  string user_id = 2;
+}
+
+message AddParticipantResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message RemoveParticipantRequest {
+  string conversation_id = 1;
+  string user_id = 2;
+}
+
+message RemoveParticipantResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message PostResponse {
+  string id = 1;
+  string user_id = 2;
+  string content = 3;
+  repeated string media_urls = 4;
+}
+

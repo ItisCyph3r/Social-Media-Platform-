@@ -1,0 +1,143 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "API Gateway",
+      "type": "shell",
+      "command": "npm run start:dev",
+      "options": {
+        "cwd": "${workspaceFolder}/services/api-gateway"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "clear": true,
+        "group": "services-group-1"
+      }
+    },
+    {
+      "label": "Auth Service",
+      "type": "shell",
+      "command": "npm run start:dev",
+      "options": {
+        "cwd": "${workspaceFolder}/services/auth-service"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "clear": true,
+        "group": "services-group-1"
+      }
+    },
+    {
+      "label": "Post Service",
+      "type": "shell",
+      "command": "npm run start:dev",
+      "options": {
+        "cwd": "${workspaceFolder}/services/post-service"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "clear": true,
+        "group": "services-group-1"
+      }
+    },
+    {
+      "label": "Notification Service",
+      "type": "shell",
+      "command": "npm run start:dev",
+      "options": {
+        "cwd": "${workspaceFolder}/services/notification-service"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "clear": true,
+        "group": "services-group-2"
+      }
+    },
+    {
+      "label": "Message Service",
+      "type": "shell",
+      "command": "npm run start:dev",
+      "options": {
+        "cwd": "${workspaceFolder}/services/message-service"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "clear": true,
+        "group": "services-group-2"
+      }
+    },
+    {
+      "label": "User Service",
+      "type": "shell",
+      "command": "npm run start:dev",
+      "options": {
+        "cwd": "${workspaceFolder}/services/user-service"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "clear": true,
+        "group": "services-group-2"
+      }
+    },
+    {
+      "label": "Start Services Group 1 (API Gateway, Auth, Post)",
+      "dependsOn": [
+        "API Gateway",
+        "Auth Service",
+        "Post Service"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "group": "services-group-1"
+      }
+    },
+    {
+      "label": "Start Services Group 2 (Notification, Message, User)",
+      "dependsOn": [
+        "Notification Service",
+        "Message Service",
+        "User Service"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "group": "services-group-2"
+      }
+    },
+    {
+      "label": "Start All Services",
+      "dependsOn": [
+        "Start Services Group 1 (API Gateway, Auth, Post)",
+        "Start Services Group 2 (Notification, Message, User)"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    }
+  ]
+}
+
