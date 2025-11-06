@@ -152,6 +152,7 @@ export class EventsConsumer implements OnModuleInit, OnModuleDestroy {
             postOwnerId: string;
             commentContent: string;
             parentCommentId?: string | null;
+            parentCommentAuthorId?: string | null;
             mentions?: string[];
             timestamp: string;
           });
@@ -289,16 +290,57 @@ export class EventsConsumer implements OnModuleInit, OnModuleDestroy {
     postOwnerId: string; 
     commentContent: string;
     parentCommentId?: string | null;
+    parentCommentAuthorId?: string | null;
     mentions?: string[];
     timestamp: string;
   }) {
-    // Don't notify if user commented on their own post
-    if (data.userId === data.postOwnerId) {
-      return;
+    // Notify parent comment author if this is a reply
+    if (data.parentCommentId && data.parentCommentAuthorId && data.parentCommentAuthorId !== data.userId) {
+      const notification = await this.notificationService.createNotification({
+        userId: data.parentCommentAuthorId,
+        type: 'comment.replied',
+        relatedId: data.commentId,
+        actorId: data.userId,
+        metadata: {
+          postId: data.postId,
+          commentId: data.commentId,
+          parentCommentId: data.parentCommentId,
+          commentPreview: data.commentContent.substring(0, 100),
+        },
+      });
+
+      // Push via WebSocket immediately
+      await this.notificationGateway.sendNotificationToUser(data.parentCommentAuthorId, {
+        id: notification.id,
+        userId: notification.userId,
+        type: notification.type,
+        relatedId: notification.relatedId,
+        actorId: notification.actorId,
+        read: notification.read,
+        readAt: notification.readAt?.toISOString() || null,
+        createdAt: notification.createdAt.toISOString(),
+        metadata: notification.metadata,
+      });
+
+      // Update unread count
+      const unreadCount = await this.notificationService.getUnreadCount(data.parentCommentAuthorId);
+      await this.notificationGateway.sendUnreadCountUpdate(data.parentCommentAuthorId, unreadCount);
+
+      // Send email if preferences allow
+      await this.sendEmailIfEnabled(
+        data.parentCommentAuthorId,
+        'comment.replied',
+        {
+          actorName: 'Someone',
+          commentPreview: data.commentContent.substring(0, 100),
+          postUrl: `#post-${data.postId}`,
+        },
+      );
     }
 
-    // Only notify post owner if it's a top-level comment
-    if (!data.parentCommentId) {
+    // Notify post owner (even for replies, so they can see conversations)
+    // Skip if post owner is the commenter, or if they're already notified as parent comment author
+    if (data.postOwnerId !== data.userId && data.postOwnerId !== data.parentCommentAuthorId) {
       const notification = await this.notificationService.createNotification({
         userId: data.postOwnerId,
         type: 'post.commented',
@@ -308,6 +350,7 @@ export class EventsConsumer implements OnModuleInit, OnModuleDestroy {
           postId: data.postId,
           commentId: data.commentId,
           commentPreview: data.commentContent.substring(0, 100),
+          isReply: !!data.parentCommentId,
         },
       });
 
@@ -333,7 +376,6 @@ export class EventsConsumer implements OnModuleInit, OnModuleDestroy {
         data.postOwnerId,
         'post.commented',
         {
-          // Todo
           actorName: 'Someone',
           postPreview: 'Your post',
           commentPreview: data.commentContent.substring(0, 100),

@@ -162,6 +162,8 @@ export class PostService {
       throw new NotFoundException('Post not found');
     }
 
+    let parentCommentAuthorId: string | null = null;
+    
     if (parentCommentId) {
       const parentComment = await this.commentRepository.findOne({
         where: { id: parentCommentId },
@@ -174,6 +176,8 @@ export class PostService {
       if (parentComment.postId !== postId) {
         throw new ConflictException('Parent comment does not belong to this post');
       }
+
+      parentCommentAuthorId = parentComment.userId;
     }
 
     const comment = this.commentRepository.create({
@@ -208,6 +212,7 @@ export class PostService {
       post.userId,
       content,
       parentCommentId,
+      parentCommentAuthorId,
       mentions || [],
     );
 

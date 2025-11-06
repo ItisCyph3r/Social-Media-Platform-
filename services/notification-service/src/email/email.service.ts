@@ -96,6 +96,17 @@ export class EmailService {
           text: `${actorName} mentioned you in a comment: ${data.commentPreview || ''}`,
         };
 
+      case 'comment.replied':
+        return {
+          subject: `${actorName} replied to your comment`,
+          html: `
+            <h2>${actorName} replied to your comment</h2>
+            ${data.commentPreview ? `<p>Reply: ${data.commentPreview}</p>` : ''}
+            <p><a href="${data.postUrl || '#'}">View post</a></p>
+          `,
+          text: `${actorName} replied to your comment: ${data.commentPreview || ''}`,
+        };
+
       case 'message.received':
         return {
           subject: `New message from ${actorName}`,

@@ -80,6 +80,8 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
       this.userSockets.get(userId)!.add(client.id);
 
       this.logger.log(`User ${userId} authenticated and connected with socket ${client.id}`);
+
+      this.sendPendingNotifications(userId, client);
     } catch (error) {
       this.logger.error(`Error during connection for client ${client.id}:`, error);
       client.disconnect();
@@ -145,6 +147,48 @@ export class NotificationGateway implements OnGatewayConnection, OnGatewayDiscon
       // Update unread count
       const unreadCount = await this.notificationService.getUnreadCount(client.userId);
       this.sendUnreadCountUpdate(client.userId, unreadCount);
+    }
+  }
+
+  /**
+   * Send pending (unread) notifications to user when they connect
+   * This ensures they see notifications that were created while they were offline
+   */
+  private async sendPendingNotifications(userId: string, client: AuthenticatedSocket) {
+    try {
+      // Get unread count
+      const unreadCount = await this.notificationService.getUnreadCount(userId);
+      this.sendUnreadCountUpdate(userId, unreadCount);
+
+      // Get recent unread notifications (last 10) to send immediately
+      const { notifications } = await this.notificationService.getNotifications(
+        userId,
+        1,
+        10,
+        true, // unreadOnly
+      );
+
+      // Send each unread notification via WebSocket
+      for (const notification of notifications) {
+        // Send notification in the format expected by frontend
+        client.emit('notification', {
+          id: notification.id,
+          userId: notification.userId,
+          type: notification.type,
+          relatedId: notification.relatedId,
+          actorId: notification.actorId,
+          read: notification.read,
+          readAt: notification.readAt?.toISOString() || null,
+          createdAt: notification.createdAt.toISOString(),
+          metadata: notification.metadata,
+        });
+      }
+
+      if (notifications.length > 0) {
+        this.logger.log(`Sent ${notifications.length} pending notifications to user ${userId}`);
+      }
+    } catch (error) {
+      this.logger.error(`Error sending pending notifications to user ${userId}:`, error);
     }
   }
 }

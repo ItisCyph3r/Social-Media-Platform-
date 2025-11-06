@@ -109,7 +109,7 @@ export class EventPublisherService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async publishPostCommented( postId: string, commentId: string, userId: string, postOwnerId: string, commentContent: string, parentCommentId?: string | null, mentions?: string[]) {
+  async publishPostCommented( postId: string, commentId: string, userId: string, postOwnerId: string, commentContent: string, parentCommentId?: string | null, parentCommentAuthorId?: string | null, mentions?: string[]) {
     if (!this.channel) {
       console.error('[EventPublisher] Channel not initialized');
       return;
@@ -124,6 +124,7 @@ export class EventPublisherService implements OnModuleInit, OnModuleDestroy {
         postOwnerId, 
         commentContent,
         parentCommentId: parentCommentId || null,
+        parentCommentAuthorId: parentCommentAuthorId || null,
         mentions: mentions || [],
         timestamp: new Date().toISOString(),
       };
