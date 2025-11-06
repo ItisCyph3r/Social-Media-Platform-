@@ -178,7 +178,9 @@ export class PostController {
         post_id: comment.postId,
         user_id: comment.userId,
         content: comment.content,
-        created_at: comment.createdAt.toISOString(),
+        created_at: comment.createdAt instanceof Date 
+          ? comment.createdAt.toISOString() 
+          : new Date(comment.createdAt).toISOString(),
         parent_comment_id: comment.parentCommentId || '',
         mentions: comment.mentions || [],
         reply_count: comment.replyCount || 0,
@@ -206,7 +208,9 @@ export class PostController {
         post_id: comment.postId,
         user_id: comment.userId,
         content: comment.content,
-        created_at: comment.createdAt.toISOString(),
+        created_at: comment.createdAt instanceof Date 
+          ? comment.createdAt.toISOString() 
+          : new Date(comment.createdAt).toISOString(),
         parent_comment_id: comment.parentCommentId || '',
         mentions: comment.mentions || [],
         reply_count: comment.replyCount || 0,
@@ -234,7 +238,9 @@ export class PostController {
         post_id: reply.postId,
         user_id: reply.userId,
         content: reply.content,
-        created_at: reply.createdAt.toISOString(),
+        created_at: reply.createdAt instanceof Date 
+          ? reply.createdAt.toISOString() 
+          : new Date(reply.createdAt).toISOString(),
         parent_comment_id: reply.parentCommentId || '',
         mentions: reply.mentions || [],
         reply_count: reply.replyCount || 0,
