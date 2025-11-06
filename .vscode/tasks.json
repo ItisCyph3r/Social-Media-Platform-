@@ -98,6 +98,22 @@
       }
     },
     {
+      "label": "Frontend",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "clear": true,
+        "group": "frontend"
+      }
+    },
+    {
       "label": "Start Services Group 1 (API Gateway, Auth, Post)",
       "dependsOn": [
         "API Gateway",
@@ -133,7 +149,8 @@
       "label": "Start All Services",
       "dependsOn": [
         "Start Services Group 1 (API Gateway, Auth, Post)",
-        "Start Services Group 2 (Notification, Message, User)"
+        "Start Services Group 2 (Notification, Message, User)",
+        "Frontend"
       ],
       "dependsOrder": "parallel",
       "problemMatcher": []

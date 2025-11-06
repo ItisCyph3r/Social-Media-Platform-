@@ -141,7 +141,8 @@ Each service will need TypeORM migrations (or SQLAlchemy for FastAPI) to set up 
 3. Select one of:
    - `Start Services Group 1 (API Gateway, Auth, Post)` - Opens 3 services in split terminals
    - `Start Services Group 2 (Notification, Message, User)` - Opens 3 services in split terminals
-   - `Start All Services` - Opens all 6 services
+   - `Frontend` - Opens the frontend dev server
+   - `Start All Services` - Opens all 6 services + frontend
 
 **Option B: Using PowerShell Script (Windows)**
 

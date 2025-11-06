@@ -48,6 +48,24 @@ Start-ServiceInTerminal "Message Service" "services\message-service" "group2"
 Start-Sleep -Milliseconds 300
 Start-ServiceInTerminal "User Service" "services\user-service" "group2"
 
+# Wait a bit before starting frontend
+Start-Sleep -Seconds 2
+
+# Start Frontend
+Write-Host "`nStarting Frontend (Next.js)" -ForegroundColor Cyan
+Start-Sleep -Milliseconds 500
+$frontendPath = Join-Path $workspaceRoot "frontend"
+Write-Host "Starting Frontend..." -ForegroundColor Yellow
+
+# Use wt (Windows Terminal) if available, otherwise use cmd
+if (Get-Command wt -ErrorAction SilentlyContinue) {
+    # Open in new tab (works whether WT is already open or not)
+    wt new-tab -d "$frontendPath" npm run dev
+} else {
+    # Fallback: Open in new Cursor terminal
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$frontendPath'; npm run dev"
+}
+
 Write-Host "`nAll services started!" -ForegroundColor Green
 Write-Host "Note: If Windows Terminal (wt) is not installed, services will open in separate windows." -ForegroundColor Yellow
 

@@ -47,6 +47,10 @@ tmux split-window -h -t "$SESSION_NAME:group2"
 tmux send-keys -t "$SESSION_NAME:group2" "cd $WORKSPACE_ROOT/services/user-service && npm run start:dev" C-m
 tmux select-layout -t "$SESSION_NAME:group2" even-horizontal
 
+# Create new window for Frontend
+tmux new-window -t "$SESSION_NAME" -n "frontend"
+tmux send-keys -t "$SESSION_NAME:frontend" "cd $WORKSPACE_ROOT/frontend && npm run dev" C-m
+
 # Select the first window
 tmux select-window -t "$SESSION_NAME:group1"
 
