@@ -94,12 +94,13 @@ message SharePostRequest {
   string conversation_id = 1;
   string sender_id = 2;
   string post_id = 3;
-  string message = 4; // optional text with share
+  string message = 4; 
 }
 
 message AddParticipantRequest {
   string conversation_id = 1;
   string user_id = 2;
+  string added_by_user_id = 3;
 }
 
 message AddParticipantResponse {
@@ -110,6 +111,7 @@ message AddParticipantResponse {
 message RemoveParticipantRequest {
   string conversation_id = 1;
   string user_id = 2;
+  string removed_by_user_id = 3;
 }
 
 message RemoveParticipantResponse {

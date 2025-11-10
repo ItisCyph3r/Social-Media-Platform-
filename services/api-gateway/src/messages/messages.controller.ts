@@ -24,18 +24,32 @@ export class MessagesController {
       parseInt(limit || '20', 10),
     );
     
-    // Enrich participants with user info
-    for (const conversation of result.conversations) {
-      for (const participant of conversation.participants) {
-        const userProfile = await this.userClient.getProfile(participant.userId);
-        if (userProfile) {
-          (participant as any).username = userProfile.username;
-          (participant as any).profile_picture = userProfile.profilePicture;
-        }
-      }
-    }
+    const enrichedConversations = await Promise.all(
+      result.conversations.map(async (conversation) => {
+        const enrichedParticipants = await Promise.all(
+          conversation.participants.map(async (participant) => {
+            const userProfile = await this.userClient.getProfile(participant.userId);
+            return {
+              id: participant.userId,
+              user_id: participant.userId,
+              username: userProfile?.username || 'Unknown',
+              profile_picture: userProfile?.profilePicture || '',
+              role: participant.role as 'admin' | 'member',
+            };
+          })
+        );
+        
+        return {
+          ...conversation,
+          participants: enrichedParticipants,
+        };
+      })
+    );
     
-    return result;
+    return {
+      ...result,
+      conversations: enrichedConversations,
+    };
   }
 
   @Post()
@@ -59,7 +73,24 @@ export class MessagesController {
       allParticipants,
       conversationName,
     );
-    return conversation;
+    
+    const enrichedParticipants = await Promise.all(
+      conversation.participants.map(async (participant) => {
+        const userProfile = await this.userClient.getProfile(participant.userId);
+        return {
+          id: participant.userId,
+          user_id: participant.userId,
+          username: userProfile?.username || 'Unknown',
+          profile_picture: userProfile?.profilePicture || '',
+          role: participant.role as 'admin' | 'member',
+        };
+      })
+    );
+    
+    return {
+      ...conversation,
+      participants: enrichedParticipants,
+    };
   }
 
   @Get(':id/messages')
@@ -127,7 +158,29 @@ export class MessagesController {
     @Body() body: { user_id: string },
   ) {
     await this.messageClient.addParticipant(conversationId, body.user_id, currentUser.userId);
-    return { success: true, message: 'Participant added successfully' };
+    
+    const conversation = await this.messageClient.getConversation(conversationId, currentUser.userId);
+    const enrichedParticipants = await Promise.all(
+      conversation.participants.map(async (participant) => {
+        const userProfile = await this.userClient.getProfile(participant.userId);
+        return {
+          id: participant.userId,
+          user_id: participant.userId,
+          username: userProfile?.username || 'Unknown',
+          profile_picture: userProfile?.profilePicture || '',
+          role: participant.role as 'admin' | 'member',
+        };
+      })
+    );
+    
+    return {
+      success: true,
+      message: 'Participant added successfully',
+      conversation: {
+        ...conversation,
+        participants: enrichedParticipants,
+      },
+    };
   }
 
   @Delete(':id/participants/:userId')
@@ -147,16 +200,23 @@ export class MessagesController {
   ) {
     const result = await this.messageClient.getConversation(conversationId, currentUser.userId);
     
-    // Enrich participants with user info
-    for (const participant of result.participants) {
-      const userProfile = await this.userClient.getProfile(participant.userId);
-      if (userProfile) {
-        (participant as any).username = userProfile.username;
-        (participant as any).profile_picture = userProfile.profilePicture;
-      }
-    }
+    const enrichedParticipants = await Promise.all(
+      result.participants.map(async (participant) => {
+        const userProfile = await this.userClient.getProfile(participant.userId);
+        return {
+          id: participant.userId, 
+          user_id: participant.userId,
+          username: userProfile?.username || 'Unknown',
+          profile_picture: userProfile?.profilePicture || '',
+          role: participant.role as 'admin' | 'member',
+        };
+      })
+    );
     
-    return result;
+    return {
+      ...result,
+      participants: enrichedParticipants,
+    };
   }
 
   @Delete(':id/messages/:messageId')

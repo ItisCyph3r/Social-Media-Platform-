@@ -81,17 +81,23 @@ export class MessageService {
         role: i === 0 || (type === ConversationType.GROUP && uniqueParticipants[i] === creatorId)
           ? ParticipantRole.ADMIN
           : ParticipantRole.MEMBER,
+        isActive: true, 
       });
       participants.push(participant);
     }
 
     await this.participantRepository.save(participants);
 
-    // Load with participants
-    return await this.conversationRepository.findOne({
+    const loadedConversation = await this.conversationRepository.findOne({
       where: { id: savedConversation.id },
       relations: ['participants'],
     }) as Conversation;
+    
+    if (loadedConversation) {
+      loadedConversation.participants = loadedConversation.participants.filter((p) => p.isActive);
+    }
+    
+    return loadedConversation;
   }
 
   /**
@@ -136,8 +142,9 @@ export class MessageService {
       take: limit,
     });
 
-    // Load last message for each conversation
     for (const conversation of conversations) {
+      conversation.participants = conversation.participants.filter((p) => p.isActive);
+      
       const lastMessage = await this.messageRepository.findOne({
         where: { conversationId: conversation.id },
         order: { createdAt: 'DESC' },
@@ -160,20 +167,29 @@ export class MessageService {
    * Get a single conversation by ID
    */
   async getConversation(conversationId: string, userId: string): Promise<Conversation> {
-    const conversation = await this.conversationRepository.findOne({
+    const userParticipant = await this.participantRepository.findOne({
       where: {
-        id: conversationId,
-        participants: {
-          userId,
-          isActive: true,
-        },
+        conversationId,
+        userId,
+        isActive: true,
       },
+    });
+
+    if (!userParticipant) {
+      throw new NotFoundException('Conversation not found or user is not a participant');
+    }
+
+    const conversation = await this.conversationRepository.findOne({
+      where: { id: conversationId },
       relations: ['participants'],
     });
 
     if (!conversation) {
-      throw new NotFoundException('Conversation not found or user is not a participant');
+      throw new NotFoundException('Conversation not found');
     }
+
+    // Filter to only active participants
+    conversation.participants = conversation.participants.filter((p) => p.isActive);
 
     return conversation;
   }
@@ -568,7 +584,7 @@ export class MessageService {
 
     if (existing) {
       if (existing.isActive) {
-        throw new ConflictException('User is already a participant');
+        return;
       } else {
         // Re-activate user
         existing.isActive = true;

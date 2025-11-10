@@ -287,6 +287,7 @@ export class MessageController {
   }) {
     try {
       if (!data.added_by_user_id) {
+        // console.error('[MessageController] added_by_user_id is missing!');
         throw new Error('added_by_user_id is required');
       }
 
@@ -301,6 +302,7 @@ export class MessageController {
         message: 'Participant added successfully',
       };
     } catch (error) {
+      // console.error('[MessageController] AddParticipant error:', error);
       throw error;
     }
   }
@@ -313,6 +315,7 @@ export class MessageController {
   }) {
     try {
       if (!data.removed_by_user_id) {
+        // console.error('[MessageController] removed_by_user_id is missing!');
         throw new Error('removed_by_user_id is required');
       }
 
@@ -327,6 +330,7 @@ export class MessageController {
         message: 'Participant removed successfully',
       };
     } catch (error) {
+      // console.error('[MessageController] RemoveParticipant error:', error);
       throw error;
     }
   }

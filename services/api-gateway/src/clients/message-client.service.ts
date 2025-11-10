@@ -393,10 +393,13 @@ export class MessageClientService implements OnModuleInit {
 
   async addParticipant(conversationId: string, userId: string, addedByUserId: string): Promise<boolean> {
     return new Promise((resolve, reject) => {
+      const requestData = { conversation_id: conversationId, user_id: userId, added_by_user_id: addedByUserId };
+      // console.log('[MessageClientService] AddParticipant sending:', JSON.stringify(requestData, null, 2));
       this.messageService.AddParticipant(
-        { conversation_id: conversationId, user_id: userId, added_by_user_id: addedByUserId },
+        requestData,
         (error, response) => {
           if (error) {
+            // console.error('[MessageClientService] AddParticipant error:', error);
             reject(error);
           } else if (!response?.success) {
             reject(new Error(response?.message || 'Failed to add participant'));
@@ -410,10 +413,13 @@ export class MessageClientService implements OnModuleInit {
 
   async removeParticipant(conversationId: string, userId: string, removedByUserId: string): Promise<boolean> {
     return new Promise((resolve, reject) => {
+      const requestData = { conversation_id: conversationId, user_id: userId, removed_by_user_id: removedByUserId };
+      // console.log('[MessageClientService] RemoveParticipant sending:', JSON.stringify(requestData, null, 2));
       this.messageService.RemoveParticipant(
-        { conversation_id: conversationId, user_id: userId, removed_by_user_id: removedByUserId },
+        requestData,
         (error, response) => {
           if (error) {
+            // console.error('[MessageClientService] RemoveParticipant error:', error);
             reject(error);
           } else if (!response?.success) {
             reject(new Error(response?.message || 'Failed to remove participant'));
