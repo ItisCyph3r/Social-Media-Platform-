@@ -35,7 +35,7 @@ export class MessageController {
           role: p.role,
           joined_at: p.joinedAt.toISOString(),
         })),
-        last_message: null, // Will be populated if there's a last message
+        last_message: null, 
         created_at: conversation.createdAt.toISOString(),
       };
     } catch (error) {
@@ -325,6 +325,32 @@ export class MessageController {
       return {
         success: true,
         message: 'Participant removed successfully',
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  @GrpcMethod('MessageService', 'DeleteMessage')
+  async deleteMessage(data: {
+    conversation_id: string;
+    message_id: string;
+    user_id?: string; // From auth context
+  }) {
+    try {
+      if (!data.user_id) {
+        throw new Error('user_id is required');
+      }
+
+      await this.messageService.deleteMessage(
+        data.conversation_id,
+        data.message_id,
+        data.user_id,
+      );
+
+      return {
+        success: true,
+        message: 'Message deleted successfully',
       };
     } catch (error) {
       throw error;

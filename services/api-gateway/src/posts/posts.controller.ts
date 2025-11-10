@@ -164,11 +164,39 @@ export class PostsController {
       parseInt(limit || '20', 10),
     );
     
-    // Enrich comments with user info
+    // Collect all unique user IDs from mentions across all comments
+    const allMentionedUserIds = new Set<string>();
+    result.comments.forEach((comment) => {
+      (comment.mentions || []).forEach((userId) => allMentionedUserIds.add(userId));
+    });
+
+    // Batch fetch usernames for all mentioned users
+    const mentionUserMap = new Map<string, string>();
+    if (allMentionedUserIds.size > 0) {
+      await Promise.all(
+        Array.from(allMentionedUserIds).map(async (userId) => {
+          try {
+            const userProfile = await this.userClient.getProfile(userId);
+            if (userProfile?.username) {
+              mentionUserMap.set(userId, userProfile.username);
+            }
+          } catch (error) {
+            // Silently skip invalid user IDs
+          }
+        }),
+      );
+    }
+
+    // Enrich comments with user info and mention usernames
     const enrichedComments = await Promise.all(
       result.comments.map(async (comment) => {
         try {
           const userProfile = await this.userClient.getProfile(comment.userId);
+          // Map mention user IDs to usernames
+          const mentionUsernames = (comment.mentions || [])
+            .map((userId) => mentionUserMap.get(userId))
+            .filter((username): username is string => !!username);
+
           return {
             id: comment.id,
             post_id: comment.postId,
@@ -177,13 +205,19 @@ export class PostsController {
             created_at: comment.createdAt || new Date().toISOString(),
             parent_comment_id: comment.parentCommentId || null,
             mentions: comment.mentions || [],
+            mention_usernames: mentionUsernames,
             reply_count: comment.replyCount || 0,
+            is_deleted: comment.isDeleted || false,
             user: userProfile ? {
               username: userProfile.username || '',
               profile_picture: userProfile.profilePicture || '',
             } : null,
           };
         } catch (error) {
+          const mentionUsernames = (comment.mentions || [])
+            .map((userId) => mentionUserMap.get(userId))
+            .filter((username): username is string => !!username);
+
           return {
             id: comment.id,
             post_id: comment.postId,
@@ -192,7 +226,9 @@ export class PostsController {
             created_at: comment.createdAt || new Date().toISOString(),
             parent_comment_id: comment.parentCommentId || null,
             mentions: comment.mentions || [],
+            mention_usernames: mentionUsernames,
             reply_count: comment.replyCount || 0,
+            is_deleted: comment.isDeleted || false,
             user: null,
           };
         }
@@ -263,11 +299,39 @@ export class PostsController {
       parseInt(limit || '20', 10),
     );
     
-    // Enrich replies with user info
+    // Collect all unique user IDs from mentions across all replies
+    const allMentionedUserIds = new Set<string>();
+    result.replies.forEach((reply) => {
+      (reply.mentions || []).forEach((userId) => allMentionedUserIds.add(userId));
+    });
+
+    // Batch fetch usernames for all mentioned users
+    const mentionUserMap = new Map<string, string>();
+    if (allMentionedUserIds.size > 0) {
+      await Promise.all(
+        Array.from(allMentionedUserIds).map(async (userId) => {
+          try {
+            const userProfile = await this.userClient.getProfile(userId);
+            if (userProfile?.username) {
+              mentionUserMap.set(userId, userProfile.username);
+            }
+          } catch (error) {
+            // Silently skip invalid user IDs
+          }
+        }),
+      );
+    }
+
+    // Enrich replies with user info and mention usernames
     const enrichedReplies = await Promise.all(
       result.replies.map(async (reply) => {
         try {
           const userProfile = await this.userClient.getProfile(reply.userId);
+          // Map mention user IDs to usernames
+          const mentionUsernames = (reply.mentions || [])
+            .map((userId) => mentionUserMap.get(userId))
+            .filter((username): username is string => !!username);
+
           return {
             id: reply.id,
             post_id: reply.postId,
@@ -276,13 +340,19 @@ export class PostsController {
             created_at: reply.createdAt || new Date().toISOString(),
             parent_comment_id: reply.parentCommentId || null,
             mentions: reply.mentions || [],
+            mention_usernames: mentionUsernames,
             reply_count: reply.replyCount || 0,
+            is_deleted: reply.isDeleted || false,
             user: userProfile ? {
               username: userProfile.username || '',
               profile_picture: userProfile.profilePicture || '',
             } : null,
           };
         } catch (error) {
+          const mentionUsernames = (reply.mentions || [])
+            .map((userId) => mentionUserMap.get(userId))
+            .filter((username): username is string => !!username);
+
           return {
             id: reply.id,
             post_id: reply.postId,
@@ -291,7 +361,9 @@ export class PostsController {
             created_at: reply.createdAt || new Date().toISOString(),
             parent_comment_id: reply.parentCommentId || null,
             mentions: reply.mentions || [],
+            mention_usernames: mentionUsernames,
             reply_count: reply.replyCount || 0,
+            is_deleted: reply.isDeleted || false,
             user: null,
           };
         }
@@ -303,6 +375,16 @@ export class PostsController {
       total: result.total,
       page: result.page,
     };
+  }
+
+  @Delete(':postId/comments/:commentId')
+  async deleteComment(
+    @Param('postId') postId: string,
+    @Param('commentId') commentId: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    await this.postClient.deleteComment(commentId, currentUser.userId);
+    return { success: true, message: 'Comment deleted successfully' };
   }
 
   @Post('upload-url')

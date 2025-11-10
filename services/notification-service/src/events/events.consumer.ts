@@ -291,6 +291,7 @@ export class EventsConsumer implements OnModuleInit, OnModuleDestroy {
     commentContent: string;
     parentCommentId?: string | null;
     parentCommentAuthorId?: string | null;
+    parentCommentContent?: string | null;
     mentions?: string[];
     timestamp: string;
   }) {
@@ -305,6 +306,7 @@ export class EventsConsumer implements OnModuleInit, OnModuleDestroy {
           postId: data.postId,
           commentId: data.commentId,
           parentCommentId: data.parentCommentId,
+          parentCommentContent: data.parentCommentContent ? data.parentCommentContent.substring(0, 150) : null,
           commentPreview: data.commentContent.substring(0, 100),
         },
       });
@@ -351,6 +353,8 @@ export class EventsConsumer implements OnModuleInit, OnModuleDestroy {
           commentId: data.commentId,
           commentPreview: data.commentContent.substring(0, 100),
           isReply: !!data.parentCommentId,
+          parentCommentId: data.parentCommentId || null,
+          parentCommentContent: data.parentCommentContent ? data.parentCommentContent.substring(0, 150) : null,
         },
       });
 

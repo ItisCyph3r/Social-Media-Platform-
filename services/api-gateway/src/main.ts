@@ -20,6 +20,11 @@ async function bootstrap() {
     }),
   );
 
+  const httpAdapter = app.getHttpAdapter();
+  httpAdapter.get('/', (req: any, res: any) => {
+    res.send('API Gateway is running');
+  });
+
   const port = process.env.PORT || 4000;
   await app.listen(port);
 

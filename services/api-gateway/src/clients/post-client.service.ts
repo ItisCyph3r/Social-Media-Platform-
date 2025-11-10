@@ -80,6 +80,7 @@ interface PostServiceClient {
       parent_comment_id: string;
       mentions: string[];
       reply_count: number;
+      is_deleted: boolean;
     }) => void,
   ): void;
   GetComments(
@@ -94,6 +95,7 @@ interface PostServiceClient {
         parent_comment_id: string;
         mentions: string[];
         reply_count: number;
+        is_deleted: boolean;
       }>;
       total: number;
       page: number;
@@ -111,6 +113,7 @@ interface PostServiceClient {
         parent_comment_id: string;
         mentions: string[];
         reply_count: number;
+        is_deleted: boolean;
       }>;
       total: number;
       page: number;
@@ -127,6 +130,10 @@ interface PostServiceClient {
   ): void;
   DeletePost(
     data: { post_id: string; user_id: string },
+    callback: (error: any, response: { success: boolean; message: string }) => void,
+  ): void;
+  DeleteComment(
+    data: { comment_id: string; user_id: string },
     callback: (error: any, response: { success: boolean; message: string }) => void,
   ): void;
   CheckUserLikedPosts(
@@ -372,6 +379,7 @@ export class PostClientService implements OnModuleInit {
     parentCommentId: string | null;
     mentions: string[];
     replyCount: number;
+    isDeleted: boolean;
   }> {
     return new Promise((resolve, reject) => {
       this.postService.CreateComment(
@@ -395,6 +403,7 @@ export class PostClientService implements OnModuleInit {
               parentCommentId: response.parent_comment_id || null,
               mentions: response.mentions || [],
               replyCount: response.reply_count || 0,
+              isDeleted: response.is_deleted || false,
             });
           }
         },
@@ -412,6 +421,7 @@ export class PostClientService implements OnModuleInit {
       parentCommentId: string | null;
       mentions: string[];
       replyCount: number;
+      isDeleted: boolean;
     }>;
     total: number;
     page: number;
@@ -433,6 +443,7 @@ export class PostClientService implements OnModuleInit {
                 parentCommentId: c.parent_comment_id || null,
                 mentions: c.mentions || [],
                 replyCount: c.reply_count || 0,
+                isDeleted: c.is_deleted || false,
               })),
               total: response.total || 0,
               page: response.page || page,
@@ -453,6 +464,7 @@ export class PostClientService implements OnModuleInit {
       parentCommentId: string | null;
       mentions: string[];
       replyCount: number;
+      isDeleted: boolean;
     }>;
     total: number;
     page: number;
@@ -474,6 +486,7 @@ export class PostClientService implements OnModuleInit {
                 parentCommentId: r.parent_comment_id || null,
                 mentions: r.mentions || [],
                 replyCount: r.reply_count || 0,
+                isDeleted: r.is_deleted || false,
               })),
               total: response.total || 0,
               page: response.page || page,
@@ -514,6 +527,21 @@ export class PostClientService implements OnModuleInit {
         (error, response) => {
           if (error || !response?.success) {
             reject(error || new Error(response?.message || 'Failed to delete post'));
+          } else {
+            resolve(true);
+          }
+        },
+      );
+    });
+  }
+
+  async deleteComment(commentId: string, userId: string): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      this.postService.DeleteComment(
+        { comment_id: commentId, user_id: userId },
+        (error, response) => {
+          if (error || !response?.success) {
+            reject(error || new Error(response?.message || 'Failed to delete comment'));
           } else {
             resolve(true);
           }

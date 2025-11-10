@@ -482,6 +482,48 @@ export class MessageService {
   }
 
   /**
+   * Delete a message (soft delete - only admins can delete others' messages)
+   */
+  async deleteMessage(conversationId: string, messageId: string, userId: string): Promise<void> {
+    // Verify user is a participant
+    const participant = await this.participantRepository.findOne({
+      where: {
+        conversationId,
+        userId,
+        isActive: true,
+      },
+    });
+
+    if (!participant) {
+      throw new NotFoundException('User is not a participant in this conversation');
+    }
+
+    // Find the message
+    const message = await this.messageRepository.findOne({
+      where: {
+        id: messageId,
+        conversationId,
+      },
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    // Check if user is the sender or an admin
+    const isSender = message.senderId === userId;
+    const isAdmin = participant.role === ParticipantRole.ADMIN;
+
+    if (!isSender && !isAdmin) {
+      throw new BadRequestException('Only message sender or admins can delete messages');
+    }
+
+    // Soft delete: set content to [deleted]
+    message.content = '[deleted]';
+    await this.messageRepository.save(message);
+  }
+
+  /**
    * Add participant to group conversation
    */
   async addParticipant(conversationId: string, userId: string, addedByUserId: string): Promise<void> {
@@ -498,7 +540,7 @@ export class MessageService {
       throw new BadRequestException('Can only add participants to group conversations');
     }
 
-    // Verify addedByUser is a participant (and preferably admin)
+    // Verify addedByUser is a participant and admin
     const addedBy = await this.participantRepository.findOne({
       where: {
         conversationId,
@@ -509,6 +551,11 @@ export class MessageService {
 
     if (!addedBy) {
       throw new NotFoundException('User adding participant is not in this conversation');
+    }
+
+    // Only admins can add participants
+    if (addedBy.role !== ParticipantRole.ADMIN) {
+      throw new BadRequestException('Only admins can add participants');
     }
 
     // Check if user is already a participant

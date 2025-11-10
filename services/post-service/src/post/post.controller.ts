@@ -184,6 +184,7 @@ export class PostController {
         parent_comment_id: comment.parentCommentId || '',
         mentions: comment.mentions || [],
         reply_count: comment.replyCount || 0,
+        is_deleted: comment.isDeleted || false,
       };
     } catch (error) {
       throw error;
@@ -214,6 +215,7 @@ export class PostController {
         parent_comment_id: comment.parentCommentId || '',
         mentions: comment.mentions || [],
         reply_count: comment.replyCount || 0,
+        is_deleted: comment.isDeleted || false,
       })),
       total,
       page: data.page || 1,
@@ -244,10 +246,27 @@ export class PostController {
         parent_comment_id: reply.parentCommentId || '',
         mentions: reply.mentions || [],
         reply_count: reply.replyCount || 0,
+        is_deleted: reply.isDeleted || false,
       })),
       total,
       page: data.page || 1,
     };
+  }
+
+  @GrpcMethod('PostService', 'DeleteComment')
+  async deleteComment(data: {
+    comment_id: string;
+    user_id: string;
+  }) {
+    try {
+      await this.postService.deleteComment(data.comment_id, data.user_id);
+      return {
+        success: true,
+        message: 'Comment deleted successfully',
+      };
+    } catch (error) {
+      throw error;
+    }
   }
 
   @GrpcMethod('PostService', 'DeletePost')

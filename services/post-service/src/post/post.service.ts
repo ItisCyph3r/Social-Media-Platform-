@@ -163,6 +163,7 @@ export class PostService {
     }
 
     let parentCommentAuthorId: string | null = null;
+    let parentCommentContent: string | null = null;
     
     if (parentCommentId) {
       const parentComment = await this.commentRepository.findOne({
@@ -178,6 +179,7 @@ export class PostService {
       }
 
       parentCommentAuthorId = parentComment.userId;
+      parentCommentContent = parentComment.content;
     }
 
     const comment = this.commentRepository.create({
@@ -213,6 +215,7 @@ export class PostService {
       content,
       parentCommentId,
       parentCommentAuthorId,
+      parentCommentContent,
       mentions || [],
     );
 
@@ -269,6 +272,29 @@ export class PostService {
     await this.cacheService.setReplyPage(commentId, page, limit, replies);
 
     return { replies, total };
+  }
+
+  async deleteComment(commentId: string, userId: string): Promise<void> {
+    const comment = await this.commentRepository.findOne({
+      where: { id: commentId },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    if (comment.userId !== userId) {
+      throw new ConflictException('You can only delete your own comments');
+    }
+
+    comment.isDeleted = true;
+    comment.content = '[deleted]';
+    await this.commentRepository.save(comment);
+
+    await this.cacheService.invalidateCommentPages(comment.postId);
+    if (comment.parentCommentId) {
+      await this.cacheService.invalidateReplyPages(comment.parentCommentId);
+    }
   }
 
   async getPostWithCounts(postId: string): Promise<Post & { likesCount: number; commentsCount: number }> {

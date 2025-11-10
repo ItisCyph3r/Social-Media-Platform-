@@ -1,12 +1,16 @@
 import { Controller, Get, Post, Param, Body, Query, UseGuards, Delete } from '@nestjs/common';
 import { MessageClientService } from '../clients/message-client.service';
+import { UserClientService } from '../clients/user-client.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser, CurrentUser as CurrentUserType } from '../auth/current-user.decorator';
 
 @Controller('api/conversations')
 @UseGuards(JwtAuthGuard)
 export class MessagesController {
-  constructor(private messageClient: MessageClientService) {}
+  constructor(
+    private messageClient: MessageClientService,
+    private userClient: UserClientService,
+  ) {}
 
   @Get()
   async getConversations(
@@ -19,19 +23,41 @@ export class MessagesController {
       parseInt(page || '1', 10),
       parseInt(limit || '20', 10),
     );
+    
+    // Enrich participants with user info
+    for (const conversation of result.conversations) {
+      for (const participant of conversation.participants) {
+        const userProfile = await this.userClient.getProfile(participant.userId);
+        if (userProfile) {
+          (participant as any).username = userProfile.username;
+          (participant as any).profile_picture = userProfile.profilePicture;
+        }
+      }
+    }
+    
     return result;
   }
 
   @Post()
   async createConversation(
     @CurrentUser() currentUser: CurrentUserType,
-    @Body() body: { type: string; name?: string; participant_ids: string[] },
+    @Body() body: { type?: string; name?: string; participant_ids: string[] },
   ) {
+    const conversationType = body.type || (body.participant_ids.length === 1 ? 'direct' : 'group');
+    
+    const allParticipants = body.participant_ids.includes(currentUser.userId)
+      ? body.participant_ids
+      : [...body.participant_ids, currentUser.userId];
+    
+    const conversationName = conversationType === 'group' 
+      ? (body.name?.trim() || 'Group Chat')
+      : undefined;
+    
     const conversation = await this.messageClient.createConversation(
       currentUser.userId,
-      body.type,
-      body.participant_ids,
-      body.name,
+      conversationType,
+      allParticipants,
+      conversationName,
     );
     return conversation;
   }
@@ -112,6 +138,35 @@ export class MessagesController {
   ) {
     await this.messageClient.removeParticipant(conversationId, userId, currentUser.userId);
     return { success: true, message: 'Participant removed successfully' };
+  }
+
+  @Get(':id')
+  async getConversation(
+    @Param('id') conversationId: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    const result = await this.messageClient.getConversation(conversationId, currentUser.userId);
+    
+    // Enrich participants with user info
+    for (const participant of result.participants) {
+      const userProfile = await this.userClient.getProfile(participant.userId);
+      if (userProfile) {
+        (participant as any).username = userProfile.username;
+        (participant as any).profile_picture = userProfile.profilePicture;
+      }
+    }
+    
+    return result;
+  }
+
+  @Delete(':id/messages/:messageId')
+  async deleteMessage(
+    @Param('id') conversationId: string,
+    @Param('messageId') messageId: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    await this.messageClient.deleteMessage(conversationId, messageId, currentUser.userId);
+    return { success: true, message: 'Message deleted successfully' };
   }
 }
 

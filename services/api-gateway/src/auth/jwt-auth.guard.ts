@@ -24,11 +24,11 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
   handleRequest(err: any, user: any, info: any, context: ExecutionContext) {
     if (err || !user) {
-      console.error('[JwtAuthGuard] Authentication failed:', {
-        err: err?.message,
-        info: info?.message,
-        hasUser: !!user,
-      });
+      // console.error('[JwtAuthGuard] Authentication failed:', {
+      //   err: err?.message,
+      //   info: info?.message,
+      //   hasUser: !!user,
+      // });
       throw err || new UnauthorizedException('Authentication failed');
     }
     return user;

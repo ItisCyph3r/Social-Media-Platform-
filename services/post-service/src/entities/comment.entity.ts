@@ -34,7 +34,10 @@ export class Comment {
   mentions: string[]; 
 
   @Column({ type: 'int', default: 0 })
-  replyCount: number; 
+  replyCount: number;
+
+  @Column({ type: 'boolean', default: false })
+  isDeleted: boolean;
 
   @ManyToOne(() => Post, (post) => post.comments, { onDelete: 'CASCADE' })
   post: Post;

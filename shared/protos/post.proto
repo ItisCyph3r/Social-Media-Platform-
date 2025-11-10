@@ -14,6 +14,7 @@ service PostService {
   rpc GetReplies(GetRepliesRequest) returns (GetRepliesResponse);
   rpc GetPresignedUploadUrl(GetPresignedUploadUrlRequest) returns (GetPresignedUploadUrlResponse);
   rpc DeletePost(DeletePostRequest) returns (DeletePostResponse);
+  rpc DeleteComment(DeleteCommentRequest) returns (DeleteCommentResponse);
   rpc CheckUserLikedPosts(CheckUserLikedPostsRequest) returns (CheckUserLikedPostsResponse);
 }
 
@@ -92,7 +93,8 @@ message CommentResponse {
   string created_at = 5;
   string parent_comment_id = 6; 
   repeated string mentions = 7;
-  int32 reply_count = 8; 
+  int32 reply_count = 8;
+  bool is_deleted = 9;
 }
 
 message GetCommentsRequest {
@@ -148,5 +150,15 @@ message CheckUserLikedPostsRequest {
 
 message CheckUserLikedPostsResponse {
   map<string, bool> liked_posts = 1; 
+}
+
+message DeleteCommentRequest {
+  string comment_id = 1;
+  string user_id = 2;
+}
+
+message DeleteCommentResponse {
+  bool success = 1;
+  string message = 2;
 }
 

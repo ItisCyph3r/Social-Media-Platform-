@@ -12,12 +12,14 @@ service MessageService {
   rpc SharePost(SharePostRequest) returns (MessageResponse);
   rpc AddParticipant(AddParticipantRequest) returns (AddParticipantResponse);
   rpc RemoveParticipant(RemoveParticipantRequest) returns (RemoveParticipantResponse);
+  rpc DeleteMessage(DeleteMessageRequest) returns (DeleteMessageResponse);
 }
 
 message CreateConversationRequest {
-  string type = 1; // "direct" or "group"
-  string name = 2; // required for groups
+  string type = 1; 
+  string name = 2; 
   repeated string participant_ids = 3;
+  string creator_id = 4; 
 }
 
 message ConversationResponse {
@@ -49,6 +51,7 @@ message GetConversationsResponse {
 
 message GetConversationRequest {
   string conversation_id = 1;
+  string user_id = 2;
 }
 
 message SendMessageRequest {
@@ -62,15 +65,16 @@ message MessageResponse {
   string conversation_id = 2;
   string sender_id = 3;
   string content = 4;
-  MessageResponse reply_to = 5; // if replying to message
-  PostResponse shared_post = 6; // if sharing post
+  MessageResponse reply_to = 5;
+  PostResponse shared_post = 6; 
   string created_at = 7;
 }
 
 message GetMessagesRequest {
   string conversation_id = 1;
-  int32 page = 2;
-  int32 limit = 3;
+  string user_id = 2; 
+  int32 page = 3;
+  int32 limit = 4;
 }
 
 message GetMessagesResponse {
@@ -109,6 +113,17 @@ message RemoveParticipantRequest {
 }
 
 message RemoveParticipantResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message DeleteMessageRequest {
+  string conversation_id = 1;
+  string message_id = 2;
+  string user_id = 3;
+}
+
+message DeleteMessageResponse {
   bool success = 1;
   string message = 2;
 }

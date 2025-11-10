@@ -31,6 +31,17 @@ interface MessageServiceClient {
       page: number;
     }) => void,
   ): void;
+  GetConversation(
+    data: { conversation_id: string; user_id: string },
+    callback: (error: any, response: {
+      id: string;
+      type: string;
+      name: string;
+      participants: Array<{ user_id: string; role: string; joined_at: string }>;
+      last_message: any;
+      created_at: string;
+    }) => void,
+  ): void;
   SendMessage(
     data: { conversation_id: string; sender_id: string; content: string },
     callback: (error: any, response: {
@@ -91,6 +102,10 @@ interface MessageServiceClient {
     data: { conversation_id: string; user_id: string; removed_by_user_id: string },
     callback: (error: any, response: { success: boolean; message: string }) => void,
   ): void;
+  DeleteMessage(
+    data: { conversation_id: string; message_id: string; user_id: string },
+    callback: (error: any, response: { success: boolean; message: string }) => void,
+  ): void;
 }
 
 @Injectable()
@@ -135,8 +150,9 @@ export class MessageClientService implements OnModuleInit {
     createdAt: string;
   }> {
     return new Promise((resolve, reject) => {
+      const requestData = { type, name, participant_ids: participantIds, creator_id: creatorId };
       this.messageService.CreateConversation(
-        { type, name, participant_ids: participantIds, creator_id: creatorId },
+        requestData,
         (error, response) => {
           if (error || !response) {
             reject(error || new Error('Failed to create conversation'));
@@ -193,6 +209,39 @@ export class MessageClientService implements OnModuleInit {
               })),
               total: response.total || 0,
               page: response.page || page,
+            });
+          }
+        },
+      );
+    });
+  }
+
+  async getConversation(conversationId: string, userId: string): Promise<{
+    id: string;
+    type: string;
+    name: string;
+    participants: Array<{ userId: string; role: string; joinedAt: string }>;
+    lastMessage: any;
+    createdAt: string;
+  }> {
+    return new Promise((resolve, reject) => {
+      this.messageService.GetConversation(
+        { conversation_id: conversationId, user_id: userId },
+        (error, response) => {
+          if (error || !response) {
+            reject(error || new Error('Failed to get conversation'));
+          } else {
+            resolve({
+              id: response.id,
+              type: response.type,
+              name: response.name || '',
+              participants: (response.participants || []).map((p: any) => ({
+                userId: p.user_id,
+                role: p.role,
+                joinedAt: p.joined_at,
+              })),
+              lastMessage: response.last_message,
+              createdAt: response.created_at,
             });
           }
         },
@@ -368,6 +417,23 @@ export class MessageClientService implements OnModuleInit {
             reject(error);
           } else if (!response?.success) {
             reject(new Error(response?.message || 'Failed to remove participant'));
+          } else {
+            resolve(true);
+          }
+        },
+      );
+    });
+  }
+
+  async deleteMessage(conversationId: string, messageId: string, userId: string): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      this.messageService.DeleteMessage(
+        { conversation_id: conversationId, message_id: messageId, user_id: userId },
+        (error, response) => {
+          if (error) {
+            reject(error);
+          } else if (!response?.success) {
+            reject(new Error(response?.message || 'Failed to delete message'));
           } else {
             resolve(true);
           }
