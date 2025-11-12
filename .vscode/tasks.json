@@ -18,6 +18,22 @@
       }
     },
     {
+      "label": "Storage Service",
+      "type": "shell",
+      "command": "npm run start:dev",
+      "options": {
+        "cwd": "${workspaceFolder}/services/storage-service"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "clear": true,
+        "group": "services-group-3"
+      }
+    },
+    {
       "label": "Auth Service",
       "type": "shell",
       "command": "npm run start:dev",
@@ -110,7 +126,7 @@
         "panel": "dedicated",
         "focus": false,
         "clear": true,
-        "group": "frontend"
+        "group": "services-group-3"
       }
     },
     {
@@ -146,11 +162,28 @@
       }
     },
     {
+      "label": "Start Services Group 3 (Frontend, Storage)",
+      "dependsOn": [
+        "Notification Service",
+        "Message Service",
+        "Frontend",
+        "Storage Service"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false,
+        "group": "services-group-2"
+      }
+    },
+    {
       "label": "Start All Services",
       "dependsOn": [
         "Start Services Group 1 (API Gateway, Auth, Post)",
         "Start Services Group 2 (Notification, Message, User)",
-        "Frontend"
+        "Start Services Group 3 (Frontend, Storage)"
       ],
       "dependsOrder": "parallel",
       "problemMatcher": []

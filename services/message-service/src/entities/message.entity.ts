@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { Conversation } from './conversation.entity';
 import { SharedPost } from './shared-post.entity';
+import { MessageAttachment } from './message-attachment.entity';
 
 @Entity('messages')
 @Index(['conversationId', 'createdAt'])
@@ -30,7 +31,7 @@ export class Message {
   content: string;
 
   @Column({ type: 'uuid', nullable: true })
-  replyToMessageId: string | null; // If replying to another message
+  replyToMessageId: string | null; 
 
   @ManyToOne(() => Conversation, (conversation) => conversation.messages, {
     onDelete: 'CASCADE',
@@ -46,6 +47,12 @@ export class Message {
     cascade: true,
   })
   sharedPost: SharedPost | null;
+
+  @OneToOne(() => MessageAttachment, (attachment) => attachment.message, {
+    nullable: true,
+    cascade: true,
+  })
+  attachment: MessageAttachment | null;
 
   @CreateDateColumn()
   createdAt: Date;

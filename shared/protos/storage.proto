@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package storage;
+
+service StorageService {
+  // Upload file with deduplication
+  rpc UploadFile(UploadFileRequest) returns (UploadFileResponse);
+  
+  // Get presigned upload URL (client-to-storage direct upload)
+  rpc GetUploadUrl(GetUploadUrlRequest) returns (GetUploadUrlResponse);
+  
+  // Get presigned access URL
+  rpc GetAccessUrl(GetAccessUrlRequest) returns (GetAccessUrlResponse);
+  
+  // Delete file (with reference counting)
+  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
+  
+  // Delete multiple files
+  rpc DeleteFiles(DeleteFilesRequest) returns (DeleteFilesResponse);
+  
+  // Check if file exists
+  rpc FileExists(FileExistsRequest) returns (FileExistsResponse);
+}
+
+message UploadFileRequest {
+  bytes file_buffer = 1;
+  string file_name = 2;
+  string mime_type = 3;
+  int64 file_size = 4;
+  string service_name = 5; // 'posts', 'messages', 'users', etc
+  string file_type = 6; // 'image', 'video', 'document', 'audio'
+}
+
+message UploadFileResponse {
+  string object_name = 1;
+  string file_hash = 2;
+  string access_url = 3;
+  string thumbnail_object_name = 4;
+  bool is_new = 5;
+  bool success = 6;
+  string error = 7;
+}
+
+message GetUploadUrlRequest {
+  string file_name = 1;
+  string mime_type = 2;
+  string service_name = 3;
+  string file_type = 4;
+  int32 expires_in = 5;
+}
+
+message GetUploadUrlResponse {
+  string upload_url = 1;
+  string object_name = 2;
+  string access_url = 3;
+  bool success = 4;
+  string error = 5;
+}
+
+message GetAccessUrlRequest {
+  string object_name = 1;
+  int32 expires_in = 2; // seconds, default 604800 (7 days)
+}
+
+message GetAccessUrlResponse {
+  string access_url = 1;
+  bool success = 2;
+  string error = 3;
+}
+
+message DeleteFileRequest {
+  string object_name = 1;
+  string service_name = 2;
+}
+
+message DeleteFileResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message DeleteFilesRequest {
+  repeated string object_names = 1;
+  string service_name = 2;
+}
+
+message DeleteFilesResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message FileExistsRequest {
+  string object_name = 1;
+}
+
+message FileExistsResponse {
+  bool exists = 1;
+  bool success = 2;
+  string error = 3;
+}
+
+
+
+
+

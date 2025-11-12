@@ -11,15 +11,16 @@ import { Server, Socket } from 'socket.io';
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { MessageService } from '../message/message.service';
 import { AuthClientService } from '../clients/auth-client.service';
+import { UserClientService } from '../clients/user-client.service';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
-  conversationIds?: Set<string>; // Track which conversations user is subscribed to
+  conversationIds?: Set<string>; 
 }
 
 @WebSocketGateway({
   cors: {
-    origin: '*', // Configure properly in production
+    origin: '*', 
   },
   namespace: '/messages',
 })
@@ -29,11 +30,12 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
   server: Server;
 
   private logger: Logger = new Logger('MessageGateway');
-  private userSockets: Map<string, Set<string>> = new Map(); // userId -> Set of socketIds
-  private socketUsers: Map<string, string> = new Map(); // socketId -> userId
+  private userSockets: Map<string, Set<string>> = new Map(); 
+  private socketUsers: Map<string, string> = new Map(); 
 
   constructor(
     private authClient: AuthClientService,
+    private userClient: UserClientService,
     @Inject(forwardRef(() => MessageService))
     private messageService: MessageService,
   ) {}
@@ -42,7 +44,6 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
     this.logger.log(`Client connecting: ${client.id}`);
 
     try {
-      // Extract JWT token from handshake
       const token =
         (client.handshake.auth?.token as string) ||
         (client.handshake.query?.token as string) ||
@@ -72,11 +73,10 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
         return;
       }
 
-      // Store userId on socket
+      // todo: Store userId on socket
       client.userId = userId;
       client.conversationIds = new Set();
 
-      // Track user's sockets
       if (!this.userSockets.has(userId)) {
         this.userSockets.set(userId, new Set());
       }
@@ -112,22 +112,27 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
   @SubscribeMessage('join_conversation')
   async handleJoinConversation(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { conversationId: string },
+    @MessageBody() data: { conversation_id?: string; conversationId?: string },
   ) {
     if (!client.userId) {
       return { error: 'Not authenticated' };
     }
 
+    const conversationId = data.conversation_id || data.conversationId;
+    if (!conversationId) {
+      return { error: 'conversation_id is required' };
+    }
+
     try {
       // Verify user is a participant
-      await this.messageService.getConversation(data.conversationId, client.userId);
+      await this.messageService.getConversation(conversationId, client.userId);
 
       // Join room for this conversation
-      client.join(`conversation:${data.conversationId}`);
-      client.conversationIds?.add(data.conversationId);
+      client.join(`conversation:${conversationId}`);
+      client.conversationIds?.add(conversationId);
 
-      this.logger.log(`User ${client.userId} joined conversation ${data.conversationId}`);
-      return { success: true, conversationId: data.conversationId };
+      this.logger.log(`User ${client.userId} joined conversation ${conversationId}`);
+      return { success: true, conversationId };
     } catch (error) {
       this.logger.error(`Error joining conversation:`, error);
       return { error: 'Failed to join conversation' };
@@ -140,17 +145,22 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
   @SubscribeMessage('leave_conversation')
   async handleLeaveConversation(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { conversationId: string },
+    @MessageBody() data: { conversation_id?: string; conversationId?: string },
   ) {
     if (!client.userId) {
       return { error: 'Not authenticated' };
     }
 
-    client.leave(`conversation:${data.conversationId}`);
-    client.conversationIds?.delete(data.conversationId);
+    const conversationId = data.conversation_id || data.conversationId;
+    if (!conversationId) {
+      return { error: 'conversation_id is required' };
+    }
 
-    this.logger.log(`User ${client.userId} left conversation ${data.conversationId}`);
-    return { success: true, conversationId: data.conversationId };
+    client.leave(`conversation:${conversationId}`);
+    client.conversationIds?.delete(conversationId);
+
+    this.logger.log(`User ${client.userId} left conversation ${conversationId}`);
+    return { success: true, conversationId };
   }
 
   /**
@@ -159,18 +169,173 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
   @SubscribeMessage('typing')
   async handleTyping(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { conversationId: string; isTyping: boolean },
+    @MessageBody() data: { conversation_id?: string; conversationId?: string; isTyping: boolean },
   ) {
     if (!client.userId) {
       return;
     }
 
-    // Broadcast typing indicator to all other participants in the conversation
-    client.to(`conversation:${data.conversationId}`).emit('typing', {
+    const conversationId = data.conversation_id || data.conversationId;
+    if (!conversationId) {
+      return;
+    }
+
+    // todo Broadcast typing indicator to all other participants in the conversation
+    client.to(`conversation:${conversationId}`).emit('typing', {
       userId: client.userId,
-      conversationId: data.conversationId,
+      conversationId,
       isTyping: data.isTyping,
     });
+  }
+
+  /**
+   * Get messages for a conversation via WebSocket
+   */
+  @SubscribeMessage('get_messages')
+  async handleGetMessages(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: { conversation_id: string; page?: number; limit?: number },
+  ) {
+    if (!client.userId) {
+      this.logger.error('get_messages: User not authenticated');
+      return { error: 'Not authenticated' };
+    }
+
+    if (!data.conversation_id) {
+      this.logger.error('get_messages: conversation_id is required');
+      return { error: 'conversation_id is required' };
+    }
+
+    try {
+      this.logger.log(`Getting messages for conversation ${data.conversation_id}, page ${data.page || 1}`);
+      const result = await this.messageService.getMessages(
+        data.conversation_id,
+        client.userId,
+        data.page || 1,
+        data.limit || 50,
+      );
+
+      this.logger.log(`Found ${result.messages.length} messages for conversation ${data.conversation_id}`);
+
+      const attachmentService = this.messageService.getAttachmentService();
+      
+      const uniqueSenderIds = Array.from(new Set(result.messages.map(msg => msg.senderId)));
+      const senderProfiles = await this.userClient.getProfiles(uniqueSenderIds);
+
+      const messagesData = {
+        conversation_id: data.conversation_id,
+        messages: await Promise.all(
+          result.messages.map(async (msg) => {
+            let attachmentData: {
+              id: string;
+              file_type: string;
+              file_name: string;
+              mime_type: string;
+              file_size: string;
+              access_url: string;
+              thumbnail_access_url: string | null;
+            } | null = null;
+            if (msg.attachment) {
+              const accessUrl = await attachmentService.getFileAccessUrl(msg.attachment.objectName);
+              let thumbnailAccessUrl: string | null = null;
+              if (msg.attachment.thumbnailObjectName) {
+                thumbnailAccessUrl = await attachmentService.getFileAccessUrl(
+                  msg.attachment.thumbnailObjectName,
+                );
+              }
+
+              attachmentData = {
+                id: msg.attachment.id,
+                file_type: msg.attachment.fileType,
+                file_name: msg.attachment.fileName,
+                mime_type: msg.attachment.mimeType,
+                file_size: msg.attachment.fileSize.toString(),
+                access_url: accessUrl,
+                thumbnail_access_url: thumbnailAccessUrl,
+              };
+            }
+
+            // Get sender profile from batch-fetched profiles
+            const senderProfile = senderProfiles.get(msg.senderId) || { username: 'Unknown', profile_picture: '' };
+
+            return {
+              id: msg.id,
+              conversation_id: msg.conversationId,
+              sender_id: msg.senderId,
+              content: msg.content,
+              reply_to_message_id: msg.replyToMessageId,
+              attachment: attachmentData,
+              sender: senderProfile,
+              created_at: msg.createdAt.toISOString(),
+            };
+          }),
+        ),
+        total: result.total,
+        page: result.page,
+      };
+
+      this.logger.log(`Emitting messages:loaded for conversation ${data.conversation_id}`);
+      client.emit('messages:loaded', messagesData);
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Error getting messages:`, error);
+      return { error: error instanceof Error ? error.message : 'Failed to get messages' };
+    }
+  }
+
+  /**
+   * Send a message via WebSocket
+   */
+  @SubscribeMessage('send_message')
+  async handleSendMessage(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: {
+      conversation_id: string;
+      content: string;
+      reply_to_message_id?: string;
+      attachment_file_hash?: string;
+      attachment_object_name?: string;
+      attachment_file_name?: string;
+      attachment_file_size?: number;
+      attachment_mime_type?: string;
+    },
+  ) {
+    if (!client.userId) {
+      return { error: 'Not authenticated' };
+    }
+
+    try {
+      // Use sendMessage for all cases 
+      const message = await this.messageService.sendMessage(
+        data.conversation_id,
+        client.userId,
+        data.content,
+        data.attachment_file_hash,
+        data.attachment_object_name,
+        data.attachment_file_name,
+        data.attachment_file_size,
+        data.attachment_mime_type,
+        data.reply_to_message_id,
+      );
+
+      return {
+        success: true,
+        message: {
+          id: message.id,
+          conversation_id: message.conversationId,
+          sender_id: message.senderId,
+          content: message.content,
+          reply_to_message_id: message.replyToMessageId,
+          created_at: message.createdAt.toISOString(),
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error sending message:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
+      this.logger.error(`Error details: ${errorMessage}`);
+      return { error: errorMessage };
+    }
   }
 
   /**
@@ -184,16 +349,22 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
     });
 
     // Also send to user's other devices if not excluded
-    if (excludeUserId) {
+    if (excludeUserId && this.server.sockets && this.server.sockets.sockets) {
       const userSockets = this.userSockets.get(excludeUserId);
       if (userSockets) {
         userSockets.forEach((socketId) => {
-          const socket = this.server.sockets.sockets.get(socketId) as AuthenticatedSocket;
-          if (socket && socket.conversationIds?.has(conversationId)) {
-            socket.emit('message:new', {
-              ...message,
-              conversationId,
-            });
+          try {
+            const socket = this.server.sockets.sockets.get(socketId) as AuthenticatedSocket;
+            if (socket && socket.conversationIds?.has(conversationId)) {
+              socket.emit('message:new', {
+                ...message,
+                conversationId,
+              });
+            }
+          } catch (error) {
+            this.logger.warn(`Error sending message to socket ${socketId}:`, error);
+            userSockets.delete(socketId);
+            this.socketUsers.delete(socketId);
           }
         });
       }
@@ -201,12 +372,22 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
   }
 
   /**
-   * Send conversation update (participant added/removed)
+   * Send conversation update
    */
   async sendConversationUpdate(conversationId: string, update: any) {
     this.server.to(`conversation:${conversationId}`).emit('conversation:updated', {
       conversationId,
       ...update,
+    });
+  }
+
+  /**
+   * Send message deleted event to all participants
+   */
+  async sendMessageDeleted(conversationId: string, messageId: string) {
+    this.server.to(`conversation:${conversationId}`).emit('message:deleted', {
+      conversationId,
+      messageId,
     });
   }
 }

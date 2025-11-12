@@ -84,6 +84,20 @@ services:
     networks:
       - app-network
 
+  postgres-storage:
+    image: postgres:15-alpine
+    container_name: postgres-storage
+    environment:
+      POSTGRES_DB: storage_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "9736:5432"
+    volumes:
+      - postgres-storage-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
   # Redis
   redis:
     image: redis:7-alpine
@@ -133,6 +147,7 @@ volumes:
   postgres-message-data:
   postgres-analytics-data:
   postgres-notification-data:
+  postgres-storage-data:
   redis-data:
   rabbitmq-data:
   minio-data:

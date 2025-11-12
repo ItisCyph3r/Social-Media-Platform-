@@ -3,19 +3,25 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Not } from 'typeorm';
+import { Repository, In, Not, MoreThan } from 'typeorm';
 import { Conversation, ConversationType } from '../entities/conversation.entity';
 import { ConversationParticipant, ParticipantRole } from '../entities/conversation-participant.entity';
 import { Message } from '../entities/message.entity';
 import { SharedPost } from '../entities/shared-post.entity';
+import { MessageAttachment } from '../entities/message-attachment.entity';
 import { EventPublisherService } from '../events/event-publisher.service';
 import { MessageGateway } from '../gateways/message.gateway';
+import { MessageAttachmentService } from '../attachments/message-attachment.service';
+import { UserClientService } from '../clients/user-client.service';
 import { forwardRef, Inject } from '@nestjs/common';
 
 @Injectable()
 export class MessageService {
+  private readonly logger = new Logger(MessageService.name);
+
   constructor(
     @InjectRepository(Conversation)
     private conversationRepository: Repository<Conversation>,
@@ -25,9 +31,13 @@ export class MessageService {
     private messageRepository: Repository<Message>,
     @InjectRepository(SharedPost)
     private sharedPostRepository: Repository<SharedPost>,
+    @InjectRepository(MessageAttachment)
+    private attachmentRepository: Repository<MessageAttachment>,
     private eventPublisher: EventPublisherService,
     @Inject(forwardRef(() => MessageGateway))
     private messageGateway: MessageGateway,
+    private attachmentService: MessageAttachmentService,
+    private userClient: UserClientService,
   ) {}
 
   /**
@@ -39,7 +49,6 @@ export class MessageService {
     participantIds: string[],
     name?: string,
   ): Promise<Conversation> {
-    // Ensure creator is in participants
     const allParticipants = [creatorId, ...participantIds.filter((id) => id !== creatorId)];
     const uniqueParticipants = [...new Set(allParticipants)];
 
@@ -201,6 +210,12 @@ export class MessageService {
     conversationId: string,
     senderId: string,
     content: string,
+    attachmentFileHash?: string,
+    attachmentObjectName?: string,
+    attachmentFileName?: string,
+    attachmentFileSize?: number,
+    attachmentMimeType?: string,
+    replyToMessageId?: string,
   ): Promise<Message> {
     // Verify sender is a participant
     const participant = await this.participantRepository.findOne({
@@ -215,17 +230,166 @@ export class MessageService {
       throw new NotFoundException('User is not a participant in this conversation');
     }
 
+    // Verify reply-to message if provided
+    if (replyToMessageId) {
+      const replyToMessage = await this.messageRepository.findOne({
+        where: {
+          id: replyToMessageId,
+          conversationId,
+        },
+      });
+
+      if (!replyToMessage) {
+        throw new NotFoundException('Message to reply to not found');
+      }
+    }
+
     // Create message
     const message = this.messageRepository.create({
       conversationId,
       senderId,
       content,
+      replyToMessageId: replyToMessageId || null,
     });
 
     const savedMessage = await this.messageRepository.save(message);
 
-    // Update conversation's updatedAt
+    // Handle attachment 
+    if (attachmentObjectName) {
+      try {
+        // Use provided metadata or extract from objectName
+        const objectNameParts = attachmentObjectName.split('/');
+        const fileName = attachmentFileName || objectNameParts[objectNameParts.length - 1];
+        const mimeType = attachmentMimeType || 'application/octet-stream';
+        const fileSize = attachmentFileSize || 0;
+        
+        // Determine file type from mimeType first, then fallback to path
+        let fileType = 'document';
+        if (mimeType.startsWith('image/')) {
+          fileType = 'image';
+        } else if (mimeType.startsWith('video/')) {
+          fileType = 'video';
+        } else if (mimeType.startsWith('audio/')) {
+          fileType = 'audio';
+        } else {
+          // Fallback: search path for file type
+          const pathStr = attachmentObjectName.toLowerCase();
+          if (pathStr.includes('/image/')) fileType = 'image';
+          else if (pathStr.includes('/video/')) fileType = 'video';
+          else if (pathStr.includes('/audio/')) fileType = 'audio';
+        }
+        
+        // Use provided hash or generate a placeholder (for Cloudinary direct uploads, hash might be empty)
+        const fileHash = attachmentFileHash || `cloudinary-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+        
+        // Find existing attachment by hash (if hash was provided and not a placeholder)
+        let existingAttachment = attachmentFileHash && !attachmentFileHash.startsWith('cloudinary-')
+          ? await this.attachmentService.findExistingFile(attachmentFileHash)
+          : null;
+        
+        if (existingAttachment) {
+          // Link existing attachment to this message
+          await this.attachmentService.linkAttachmentToMessage(savedMessage.id, attachmentFileHash!);
+        } else {
+          // Create new attachment record
+          await this.attachmentService.createAttachment(
+            savedMessage.id,
+            fileType,
+            fileName,
+            mimeType,
+            fileSize,
+            fileHash,
+            attachmentObjectName,
+            null, // No thumbnail for now
+          );
+        }
+      } catch (error) {
+        this.logger.error(`Error creating/linking attachment to message: ${error.message}`);
+        // Don't fail message creation if attachment creation fails
+      }
+    }
+
     await this.conversationRepository.update(conversationId, { updatedAt: new Date() });
+
+    // Load attachment and reply if exists for WebSocket broadcast
+    const messageWithAttachment = await this.messageRepository.findOne({
+      where: { id: savedMessage.id },
+      relations: ['attachment', 'replyToMessage', 'replyToMessage.attachment'],
+    });
+
+    let attachmentData: any = null;
+    if (messageWithAttachment?.attachment) {
+      const attachment = messageWithAttachment.attachment;
+      const accessUrl = await this.attachmentService.getFileAccessUrl(attachment.objectName);
+      let thumbnailAccessUrl: string | null = null;
+      if (attachment.thumbnailObjectName) {
+        thumbnailAccessUrl = await this.attachmentService.getFileAccessUrl(
+          attachment.thumbnailObjectName,
+        );
+      }
+
+      attachmentData = {
+        id: attachment.id,
+        file_type: attachment.fileType,
+        file_name: attachment.fileName,
+        mime_type: attachment.mimeType,
+        file_size: attachment.fileSize.toString(),
+        access_url: accessUrl,
+        thumbnail_access_url: thumbnailAccessUrl,
+      };
+    }
+
+    // Fetch sender profile
+    const senderProfile = await this.userClient.getProfile(senderId);
+    const senderData = senderProfile
+      ? { username: senderProfile.username, profile_picture: senderProfile.profilePicture }
+      : { username: 'Unknown', profile_picture: '' };
+
+    // Prepare reply_to data with attachment if exists
+    let replyToData: any = null;
+    if (messageWithAttachment?.replyToMessage) {
+      const replyToMsg = messageWithAttachment.replyToMessage;
+      let replyAttachmentData: any = null;
+      
+      if (replyToMsg.attachment) {
+        const replyAttachment = replyToMsg.attachment;
+        const replyAccessUrl = await this.attachmentService.getFileAccessUrl(replyAttachment.objectName);
+        let replyThumbnailAccessUrl: string | null = null;
+        if (replyAttachment.thumbnailObjectName) {
+          replyThumbnailAccessUrl = await this.attachmentService.getFileAccessUrl(
+            replyAttachment.thumbnailObjectName,
+          );
+        }
+
+        replyAttachmentData = {
+          id: replyAttachment.id,
+          file_type: replyAttachment.fileType,
+          file_name: replyAttachment.fileName,
+          mime_type: replyAttachment.mimeType,
+          file_size: replyAttachment.fileSize.toString(),
+          access_url: replyAccessUrl,
+          thumbnail_access_url: replyThumbnailAccessUrl,
+        };
+      }
+
+      // Fetch reply-to message sender profile
+      const replySenderProfile = await this.userClient.getProfile(replyToMsg.senderId);
+      const replySenderData = replySenderProfile
+        ? { username: replySenderProfile.username, profile_picture: replySenderProfile.profilePicture }
+        : { username: 'Unknown', profile_picture: '' };
+
+      replyToData = {
+        id: replyToMsg.id,
+        conversation_id: replyToMsg.conversationId,
+        sender_id: replyToMsg.senderId,
+        content: replyToMsg.content,
+        reply_to: null,
+        shared_post: null,
+        attachment: replyAttachmentData,
+        sender: replySenderData,
+        created_at: replyToMsg.createdAt.toISOString(),
+      };
+    }
 
     // Send real-time message via WebSocket
     await this.messageGateway.sendMessageToConversation(
@@ -235,8 +399,10 @@ export class MessageService {
         conversation_id: savedMessage.conversationId,
         sender_id: savedMessage.senderId,
         content: savedMessage.content,
-        reply_to: null,
+        reply_to: replyToData,
         shared_post: null,
+        attachment: attachmentData,
+        sender: senderData,
         created_at: savedMessage.createdAt.toISOString(),
       },
       senderId,
@@ -310,11 +476,63 @@ export class MessageService {
     // Update conversation's updatedAt
     await this.conversationRepository.update(conversationId, { updatedAt: new Date() });
 
-    // Reload message with reply-to relation
+    // Reload message with reply-to relation and its attachment
     const messageWithReply = await this.messageRepository.findOne({
       where: { id: savedMessage.id },
-      relations: ['replyToMessage', 'sharedPost'],
+      relations: ['replyToMessage', 'replyToMessage.attachment', 'sharedPost'],
     }) as Message;
+
+    // Fetch sender profile
+    const senderProfile = await this.userClient.getProfile(senderId);
+    const senderData = senderProfile
+      ? { username: senderProfile.username, profile_picture: senderProfile.profilePicture }
+      : { username: 'Unknown', profile_picture: '' };
+
+    // Prepare reply_to data with attachment if exists
+    let replyToData: any = null;
+    if (messageWithReply?.replyToMessage) {
+      const replyToMsg = messageWithReply.replyToMessage;
+      let replyAttachmentData: any = null;
+      
+      if (replyToMsg.attachment) {
+        const replyAttachment = replyToMsg.attachment;
+        const replyAccessUrl = await this.attachmentService.getFileAccessUrl(replyAttachment.objectName);
+        let replyThumbnailAccessUrl: string | null = null;
+        if (replyAttachment.thumbnailObjectName) {
+          replyThumbnailAccessUrl = await this.attachmentService.getFileAccessUrl(
+            replyAttachment.thumbnailObjectName,
+          );
+        }
+
+        replyAttachmentData = {
+          id: replyAttachment.id,
+          file_type: replyAttachment.fileType,
+          file_name: replyAttachment.fileName,
+          mime_type: replyAttachment.mimeType,
+          file_size: replyAttachment.fileSize.toString(),
+          access_url: replyAccessUrl,
+          thumbnail_access_url: replyThumbnailAccessUrl,
+        };
+      }
+
+      // Fetch reply-to message sender profile
+      const replySenderProfile = await this.userClient.getProfile(replyToMsg.senderId);
+      const replySenderData = replySenderProfile
+        ? { username: replySenderProfile.username, profile_picture: replySenderProfile.profilePicture }
+        : { username: 'Unknown', profile_picture: '' };
+
+      replyToData = {
+        id: replyToMsg.id,
+        conversation_id: replyToMsg.conversationId,
+        sender_id: replyToMsg.senderId,
+        content: replyToMsg.content,
+        reply_to: null,
+        shared_post: null,
+        attachment: replyAttachmentData,
+        sender: replySenderData,
+        created_at: replyToMsg.createdAt.toISOString(),
+      };
+    }
 
     // Send real-time message via WebSocket
     await this.messageGateway.sendMessageToConversation(
@@ -324,18 +542,9 @@ export class MessageService {
         conversation_id: messageWithReply.conversationId,
         sender_id: messageWithReply.senderId,
         content: messageWithReply.content,
-        reply_to: messageWithReply.replyToMessage
-          ? {
-              id: messageWithReply.replyToMessage.id,
-              conversation_id: messageWithReply.replyToMessage.conversationId,
-              sender_id: messageWithReply.replyToMessage.senderId,
-              content: messageWithReply.replyToMessage.content,
-              reply_to: null,
-              shared_post: null,
-              created_at: messageWithReply.replyToMessage.createdAt.toISOString(),
-            }
-          : null,
+        reply_to: replyToData,
         shared_post: null,
+        sender: senderData,
         created_at: messageWithReply.createdAt.toISOString(),
       },
       senderId,
@@ -411,6 +620,12 @@ export class MessageService {
     // Update conversation's updatedAt
     await this.conversationRepository.update(conversationId, { updatedAt: new Date() });
 
+    // Fetch sender profile
+    const senderProfile = await this.userClient.getProfile(senderId);
+    const senderData = senderProfile
+      ? { username: senderProfile.username, profile_picture: senderProfile.profilePicture }
+      : { username: 'Unknown', profile_picture: '' };
+
     // Send real-time message via WebSocket
     await this.messageGateway.sendMessageToConversation(
       conversationId,
@@ -428,6 +643,7 @@ export class MessageService {
               media_urls: [],
             }
           : null,
+        sender: senderData,
         created_at: messageWithSharedPost.createdAt.toISOString(),
       },
       senderId,
@@ -484,7 +700,7 @@ export class MessageService {
 
     const [messages, total] = await this.messageRepository.findAndCount({
       where: { conversationId },
-      relations: ['sharedPost', 'replyToMessage'],
+      relations: ['sharedPost', 'replyToMessage', 'attachment'],
       order: { createdAt: 'DESC' },
       skip,
       take: limit,
@@ -498,7 +714,111 @@ export class MessageService {
   }
 
   /**
-   * Delete a message (soft delete - only admins can delete others' messages)
+   * Get message with attachment loaded
+   */
+  async getMessageWithAttachment(messageId: string): Promise<Message | null> {
+    return await this.messageRepository.findOne({
+      where: { id: messageId },
+      relations: ['attachment', 'sharedPost', 'replyToMessage'],
+    });
+  }
+
+  /**
+   * Get attachment access URL
+   */
+  async getAttachmentAccessUrl(objectName: string): Promise<string> {
+    return await this.attachmentService.getFileAccessUrl(objectName);
+  }
+
+  /**
+   * Get attachment service
+   */
+  getAttachmentService(): MessageAttachmentService {
+    return this.attachmentService;
+  }
+
+  /**
+   * Mark conversation as read for a user
+   */
+  async markConversationAsRead(conversationId: string, userId: string): Promise<void> {
+    const participant = await this.participantRepository.findOne({
+      where: {
+        conversationId,
+        userId,
+        isActive: true,
+      },
+    });
+
+    if (!participant) {
+      throw new NotFoundException('User is not a participant in this conversation');
+    }
+
+    participant.lastReadAt = new Date();
+    await this.participantRepository.save(participant);
+  }
+
+  /**
+   * Get unread message count for a conversation
+   */
+  async getUnreadCount(conversationId: string, userId: string): Promise<number> {
+    const participant = await this.participantRepository.findOne({
+      where: {
+        conversationId,
+        userId,
+        isActive: true,
+      },
+    });
+
+    if (!participant) {
+      return 0;
+    }
+
+    // If never read, count all messages
+    if (!participant.lastReadAt) {
+      const total = await this.messageRepository.count({
+        where: {
+          conversationId,
+          senderId: Not(userId), 
+        },
+      });
+      return total;
+    }
+
+    // Count messages after lastReadAt
+    const unreadCount = await this.messageRepository.count({
+      where: {
+        conversationId,
+        senderId: Not(userId), 
+        createdAt: MoreThan(participant.lastReadAt),
+      },
+    });
+
+    return unreadCount;
+  }
+
+  /**
+   * Get unread counts for all conversations for a user
+   */
+  async getUnreadCounts(userId: string): Promise<Record<string, number>> {
+    const participants = await this.participantRepository.find({
+      where: {
+        userId,
+        isActive: true,
+      },
+    });
+
+    const unreadCounts: Record<string, number> = {};
+
+    for (const participant of participants) {
+      const count = await this.getUnreadCount(participant.conversationId, userId);
+      unreadCounts[participant.conversationId] = count;
+    }
+
+    return unreadCounts;
+  }
+
+  /**
+   * Delete a message 
    */
   async deleteMessage(conversationId: string, messageId: string, userId: string): Promise<void> {
     // Verify user is a participant
@@ -514,12 +834,13 @@ export class MessageService {
       throw new NotFoundException('User is not a participant in this conversation');
     }
 
-    // Find the message
+    // Find the message with attachment
     const message = await this.messageRepository.findOne({
       where: {
         id: messageId,
         conversationId,
       },
+      relations: ['attachment'],
     });
 
     if (!message) {
@@ -534,9 +855,21 @@ export class MessageService {
       throw new BadRequestException('Only message sender or admins can delete messages');
     }
 
+    // Delete attachment if exists 
+    if (message.attachment) {
+      try {
+        await this.attachmentService.decrementReferenceCount(message.attachment.id);
+      } catch (error) {
+        this.logger.error(`Failed to delete attachment for message ${messageId}:`, error);
+      }
+    }
+
     // Soft delete: set content to [deleted]
     message.content = '[deleted]';
     await this.messageRepository.save(message);
+
+    // Emit WebSocket event for message deletion
+    await this.messageGateway.sendMessageDeleted(conversationId, messageId);
   }
 
   /**
@@ -658,6 +991,35 @@ export class MessageService {
       throw new BadRequestException('Only admins can remove other participants');
     }
 
+    participant.isActive = false;
+    await this.participantRepository.save(participant);
+  }
+
+  /**
+   * Delete a conversation 
+   */
+  async deleteConversation(conversationId: string, userId: string): Promise<void> {
+    const conversation = await this.conversationRepository.findOne({
+      where: { id: conversationId },
+    });
+
+    if (!conversation) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    const participant = await this.participantRepository.findOne({
+      where: {
+        conversationId,
+        userId,
+        isActive: true,
+      },
+    });
+
+    if (!participant) {
+      throw new NotFoundException('User is not a participant in this conversation');
+    }
+
+    // Mark user's participation as inactive 
     participant.isActive = false;
     await this.participantRepository.save(participant);
   }

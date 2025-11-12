@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { Post } from '../entities/post.entity';
 import { Like } from '../entities/like.entity';
 import { Comment } from '../entities/comment.entity';
-import { MinioService } from '../storage/minio.service';
+import { StorageClientService } from '../clients/storage-client.service';
 import { EventPublisherService } from '../events/event-publisher.service';
 import { PostCacheService } from '../cache/post-cache.service';
 
@@ -18,7 +18,7 @@ export class PostService {
     private likeRepository: Repository<Like>,
     @InjectRepository(Comment)
     private commentRepository: Repository<Comment>,
-    private minioService: MinioService,
+    private storageClientService: StorageClientService,
     private eventPublisher: EventPublisherService,
     private cacheService: PostCacheService,
     private configService: ConfigService,
@@ -351,14 +351,14 @@ export class PostService {
     fileName: string,
     contentType: string,
   ): Promise<{ uploadUrl: string; objectName: string; accessUrl: string }> {
-    return await this.minioService.getPresignedUploadUrl(fileName, contentType);
+    return await this.storageClientService.getPresignedUploadUrl(fileName, contentType, 'image');
   }
 
   /**
    * Get presigned access URL for an existing file
    */
   async getFileAccessUrl(objectName: string): Promise<string> {
-    return await this.minioService.getFileUrl(objectName);
+    return await this.storageClientService.getFileAccessUrl(objectName);
   }
 
   async deletePost(postId: string, userId: string): Promise<void> {
@@ -371,8 +371,6 @@ export class PostService {
     }
 
     if (post.mediaUrls && post.mediaUrls.length > 0) {
-      const bucketName = this.configService?.get<string>('MINIO_BUCKET') || 'posts';
-      
       const objectNames = post.mediaUrls.map((url) => {
         try {
           // If it's already an object name, use it directly
@@ -387,45 +385,45 @@ export class PostService {
           // Remove leading slash
           let objectName = pathname.startsWith('/') ? pathname.slice(1) : pathname;
           
-          // Remove bucket name prefix if present (e.g., 'posts' or 'media')
-          // The path format is: /bucket/object-name
-          // After removing leading slash: bucket/object-name
-          // We need to remove the bucket name to get just the object name
-          if (objectName.startsWith(`${bucketName}/`)) {
-            objectName = objectName.slice(bucketName.length + 1); // Remove 'bucket/'
+          // filter
+          if (objectName.startsWith('files/posts/')) {
+            objectName = objectName.slice(11); // Remove 'files/posts/'
+          } else if (objectName.startsWith('posts/')) {
+            objectName = objectName.slice(6); // Remove 'posts/'
           } else if (objectName.startsWith('media/')) {
-            // Handle legacy 'media' bucket name
             objectName = objectName.slice(6); // Remove 'media/'
           }
           
           // Ensure object name has the 'posts/' prefix if it's just a filename
-          // Object names are stored as: posts/1762379301878-abc123-filename.jpg
           if (!objectName.includes('/')) {
-            objectName = `posts/${objectName}`;
+            objectName = `posts/image/${objectName}`;
           }
           
           return objectName;
         } catch (error) {
-          // Fallback: try to extract from path manually
           // Remove query parameters first
           const urlWithoutQuery = url.split('?')[0];
           const parts = urlWithoutQuery.split('/').filter(part => part.length > 0);
           
-          // Find the bucket name in the path and get everything after it
+          // Look for 'files', 'posts', or 'media' in the path
           const bucketIndex = parts.findIndex(part => 
-            part === bucketName || part === 'posts' || part === 'media'
+            part === 'files' || part === 'posts' || part === 'media'
           );
           
           if (bucketIndex >= 0 && bucketIndex < parts.length - 1) {
-            // Get all parts after the bucket name
+            // Get all parts after the bucket/service name
             const objectParts = parts.slice(bucketIndex + 1);
+            // If we found 'files', we need to skip one more part 
+            if (parts[bucketIndex] === 'files' && objectParts.length > 0) {
+              return objectParts.join('/');
+            }
             return objectParts.join('/');
           }
           
-          // Last resort: try to get the last part (filename) and prepend 'posts/'
+          // Last resort: try to get the last part (filename) and prepend 'posts/image/'
           const filename = parts[parts.length - 1];
           if (filename) {
-            return `posts/${filename}`;
+            return `posts/image/${filename}`;
           }
           
           // If all else fails, log and return empty string (will be filtered out)
@@ -435,7 +433,14 @@ export class PostService {
       }).filter((name) => name && name.length > 0); // Filter out invalid names
 
       if (objectNames.length > 0) {
-        await this.minioService.deleteFiles(objectNames);
+        // Delete files one by one using storage service
+        for (const objectName of objectNames) {
+          try {
+            await this.storageClientService.deleteFile(objectName);
+          } catch (error) {
+            console.error(`Failed to delete file ${objectName}:`, error);
+          }
+        }
       }
     }
 

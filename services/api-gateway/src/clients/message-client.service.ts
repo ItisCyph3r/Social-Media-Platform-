@@ -43,7 +43,13 @@ interface MessageServiceClient {
     }) => void,
   ): void;
   SendMessage(
-    data: { conversation_id: string; sender_id: string; content: string },
+    data: { 
+      conversation_id: string; 
+      sender_id: string; 
+      content: string;
+      attachment_file_hash?: string;
+      attachment_object_name?: string;
+    },
     callback: (error: any, response: {
       id: string;
       conversation_id: string;
@@ -51,6 +57,7 @@ interface MessageServiceClient {
       content: string;
       reply_to: any;
       shared_post: any;
+      attachment: any;
       created_at: string;
     }) => void,
   ): void;
@@ -105,6 +112,63 @@ interface MessageServiceClient {
   DeleteMessage(
     data: { conversation_id: string; message_id: string; user_id: string },
     callback: (error: any, response: { success: boolean; message: string }) => void,
+  ): void;
+  DeleteConversation(
+    data: { conversation_id: string; user_id: string },
+    callback: (error: any, response: { success: boolean; message: string }) => void,
+  ): void;
+  UploadMessageAttachment(
+    data: { file_name: string; mime_type: string; file_size: number; user_id: string },
+    callback: (error: any, response: {
+      upload_url: string;
+      object_name: string;
+      file_hash: string;
+      expires_in: number;
+    }) => void,
+  ): void;
+  GetMessageAttachment(
+    data: { attachment_id: string },
+    callback: (error: any, response: {
+      id: string;
+      message_id: string;
+      file_type: string;
+      file_name: string;
+      mime_type: string;
+      file_size: string;
+      file_hash: string;
+      object_name: string;
+      thumbnail_object_name: string;
+      access_url: string;
+      thumbnail_access_url: string;
+    }) => void,
+  ): void;
+  MarkConversationAsRead(
+    data: { conversation_id: string; user_id: string },
+    callback: (error: any, response: { success: boolean; message: string }) => void,
+  ): void;
+  GetUnreadCount(
+    data: { conversation_id: string; user_id: string },
+    callback: (error: any, response: { count: number }) => void,
+  ): void;
+  GetUnreadCounts(
+    data: { user_id: string },
+    callback: (error: any, response: { unread_counts: Record<string, number> }) => void,
+  ): void;
+  UploadFileBuffer(
+    data: {
+      file_data: Buffer;
+      file_name: string;
+      mime_type: string;
+      file_size: number;
+      user_id: string;
+      object_name: string;
+    },
+    callback: (error: any, response: {
+      object_name: string;
+      file_hash: string;
+      success: boolean;
+      message: string;
+    }) => void,
   ): void;
 }
 
@@ -249,18 +313,31 @@ export class MessageClientService implements OnModuleInit {
     });
   }
 
-  async sendMessage(conversationId: string, senderId: string, content: string): Promise<{
+  async sendMessage(
+    conversationId: string,
+    senderId: string,
+    content: string,
+    attachmentFileHash?: string,
+    attachmentObjectName?: string,
+  ): Promise<{
     id: string;
     conversationId: string;
     senderId: string;
     content: string;
     replyTo: any;
     sharedPost: any;
+    attachment: any;
     createdAt: string;
   }> {
     return new Promise((resolve, reject) => {
       this.messageService.SendMessage(
-        { conversation_id: conversationId, sender_id: senderId, content },
+        {
+          conversation_id: conversationId,
+          sender_id: senderId,
+          content,
+          attachment_file_hash: attachmentFileHash,
+          attachment_object_name: attachmentObjectName,
+        },
         (error, response) => {
           if (error || !response) {
             reject(error || new Error('Failed to send message'));
@@ -272,6 +349,7 @@ export class MessageClientService implements OnModuleInit {
               content: response.content,
               replyTo: response.reply_to,
               sharedPost: response.shared_post,
+              attachment: response.attachment,
               createdAt: response.created_at,
             });
           }
@@ -288,6 +366,7 @@ export class MessageClientService implements OnModuleInit {
       content: string;
       replyTo: any;
       sharedPost: any;
+      attachment: any;
       createdAt: string;
     }>;
     total: number;
@@ -308,6 +387,7 @@ export class MessageClientService implements OnModuleInit {
                 content: msg.content,
                 replyTo: msg.reply_to,
                 sharedPost: msg.shared_post,
+                attachment: msg.attachment,
                 createdAt: msg.created_at,
               })),
               total: response.total || 0,
@@ -442,6 +522,181 @@ export class MessageClientService implements OnModuleInit {
             reject(new Error(response?.message || 'Failed to delete message'));
           } else {
             resolve(true);
+          }
+        },
+      );
+    });
+  }
+
+  async deleteConversation(conversationId: string, userId: string): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      this.messageService.DeleteConversation(
+        { conversation_id: conversationId, user_id: userId },
+        (error, response) => {
+          if (error) {
+            reject(error);
+          } else if (!response?.success) {
+            reject(new Error(response?.message || 'Failed to delete conversation'));
+          } else {
+            resolve(true);
+          }
+        },
+      );
+    });
+  }
+
+  async uploadMessageAttachment(
+    fileName: string,
+    mimeType: string,
+    fileSize: number,
+    userId: string,
+  ): Promise<{
+    uploadUrl: string;
+    objectName: string;
+    fileHash: string;
+    expiresIn: number;
+  }> {
+    return new Promise((resolve, reject) => {
+      this.messageService.UploadMessageAttachment(
+        {
+          file_name: fileName,
+          mime_type: mimeType,
+          file_size: fileSize,
+          user_id: userId,
+        },
+        (error, response) => {
+          if (error || !response) {
+            reject(error || new Error('Failed to get upload URL'));
+          } else {
+            resolve({
+              uploadUrl: response.upload_url,
+              objectName: response.object_name,
+              fileHash: response.file_hash,
+              expiresIn: response.expires_in,
+            });
+          }
+        },
+      );
+    });
+  }
+
+  async getMessageAttachment(attachmentId: string): Promise<{
+    id: string;
+    messageId: string;
+    fileType: string;
+    fileName: string;
+    mimeType: string;
+    fileSize: string;
+    fileHash: string;
+    objectName: string;
+    thumbnailObjectName: string;
+    accessUrl: string;
+    thumbnailAccessUrl: string;
+  }> {
+    return new Promise((resolve, reject) => {
+      this.messageService.GetMessageAttachment(
+        { attachment_id: attachmentId },
+        (error, response) => {
+          if (error || !response) {
+            reject(error || new Error('Failed to get attachment'));
+          } else {
+            resolve({
+              id: response.id,
+              messageId: response.message_id,
+              fileType: response.file_type,
+              fileName: response.file_name,
+              mimeType: response.mime_type,
+              fileSize: response.file_size,
+              fileHash: response.file_hash,
+              objectName: response.object_name,
+              thumbnailObjectName: response.thumbnail_object_name,
+              accessUrl: response.access_url,
+              thumbnailAccessUrl: response.thumbnail_access_url,
+            });
+          }
+        },
+      );
+    });
+  }
+
+  async markConversationAsRead(conversationId: string, userId: string): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      this.messageService.MarkConversationAsRead(
+        { conversation_id: conversationId, user_id: userId },
+        (error, response) => {
+          if (error || !response?.success) {
+            reject(error || new Error('Failed to mark conversation as read'));
+          } else {
+            resolve(true);
+          }
+        },
+      );
+    });
+  }
+
+  async getUnreadCount(conversationId: string, userId: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      this.messageService.GetUnreadCount(
+        { conversation_id: conversationId, user_id: userId },
+        (error, response) => {
+          if (error || response === undefined) {
+            reject(error || new Error('Failed to get unread count'));
+          } else {
+            resolve(response.count || 0);
+          }
+        },
+      );
+    });
+  }
+
+  async getUnreadCounts(userId: string): Promise<Record<string, number>> {
+    return new Promise((resolve, reject) => {
+      this.messageService.GetUnreadCounts(
+        { user_id: userId },
+        (error, response) => {
+          if (error || !response) {
+            reject(error || new Error('Failed to get unread counts'));
+          } else {
+            resolve(response.unread_counts || {});
+          }
+        },
+      );
+    });
+  }
+
+  async uploadFileBuffer(
+    fileBuffer: Buffer,
+    fileName: string,
+    mimeType: string,
+    fileSize: number,
+    userId: string,
+    objectName: string,
+  ): Promise<{
+    objectName: string;
+    fileHash: string;
+    success: boolean;
+    message: string;
+  }> {
+    return new Promise((resolve, reject) => {
+      this.messageService.UploadFileBuffer(
+        {
+          file_data: fileBuffer,
+          file_name: fileName,
+          mime_type: mimeType,
+          file_size: fileSize,
+          user_id: userId,
+          object_name: objectName,
+        },
+        (error, response) => {
+          if (error || !response) {
+            reject(error || new Error('Failed to upload file'));
+          } else {
+            resolve({
+              objectName: response.object_name,
+              fileHash: response.file_hash,
+              success: response.success,
+              message: response.message,
+            });
           }
         },
       );

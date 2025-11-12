@@ -1,13 +1,9 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Conversation } from '../entities/conversation.entity';
-import { ConversationParticipant } from '../entities/conversation-participant.entity';
-import { Message } from '../entities/message.entity';
-import { SharedPost } from '../entities/shared-post.entity';
-import { MessageAttachment } from '../entities/message-attachment.entity';
+import { FileMetadata } from '../entities/file-metadata/file-metadata';
 
 export const databaseConfig = (configService: ConfigService): TypeOrmModuleOptions => {
-  const databaseUrl = configService.get<string>('DATABASE_URL');
+  const databaseUrl = configService.get<string>('DATABASE_URL') || 'postgresql://postgres:postgres@localhost:9736/storage_db';
 
   if (databaseUrl) {
     const safeUrl = databaseUrl.replace(/:[^:@]+@/, ':****@');
@@ -19,9 +15,9 @@ export const databaseConfig = (configService: ConfigService): TypeOrmModuleOptio
   return {
     type: 'postgres',
     url: databaseUrl,
-    entities: [Conversation, ConversationParticipant, Message, SharedPost, MessageAttachment],
+    entities: [FileMetadata],
     synchronize: configService.get<string>('NODE_ENV') !== 'production',
-    logging: false, 
+    logging: false,
   };
 };
 

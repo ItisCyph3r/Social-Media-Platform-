@@ -6,12 +6,16 @@ import { Conversation } from './entities/conversation.entity';
 import { ConversationParticipant } from './entities/conversation-participant.entity';
 import { Message } from './entities/message.entity';
 import { SharedPost } from './entities/shared-post.entity';
+import { MessageAttachment } from './entities/message-attachment.entity';
 import { MessageController } from './message/message.controller';
 import { MessageService } from './message/message.service';
 import { MessageGateway } from './gateways/message.gateway';
 import { EventPublisherService } from './events/event-publisher.service';
 import { AuthClientService } from './clients/auth-client.service';
 import { PostClientService } from './clients/post-client.service';
+import { UserClientService } from './clients/user-client.service';
+import { MessageAttachmentService } from './attachments/message-attachment.service';
+import { StorageClientService } from './clients/storage-client.service';
 
 @Module({
   imports: [
@@ -24,7 +28,7 @@ import { PostClientService } from './clients/post-client.service';
       useFactory: (configService: ConfigService) => databaseConfig(configService),
       inject: [ConfigService],
     }),
-    TypeOrmModule.forFeature([Conversation, ConversationParticipant, Message, SharedPost]),
+    TypeOrmModule.forFeature([Conversation, ConversationParticipant, Message, SharedPost, MessageAttachment]),
   ],
   controllers: [MessageController],
   providers: [
@@ -33,6 +37,9 @@ import { PostClientService } from './clients/post-client.service';
     EventPublisherService,
     AuthClientService,
     PostClientService,
+    UserClientService,
+    MessageAttachmentService,
+    StorageClientService,
   ],
 })
 export class AppModule {}

@@ -13,6 +13,13 @@ service MessageService {
   rpc AddParticipant(AddParticipantRequest) returns (AddParticipantResponse);
   rpc RemoveParticipant(RemoveParticipantRequest) returns (RemoveParticipantResponse);
   rpc DeleteMessage(DeleteMessageRequest) returns (DeleteMessageResponse);
+  rpc DeleteConversation(DeleteConversationRequest) returns (DeleteConversationResponse);
+  rpc UploadMessageAttachment(UploadMessageAttachmentRequest) returns (UploadMessageAttachmentResponse);
+  rpc UploadFileBuffer(UploadFileBufferRequest) returns (UploadFileBufferResponse);
+  rpc GetMessageAttachment(GetMessageAttachmentRequest) returns (GetMessageAttachmentResponse);
+  rpc MarkConversationAsRead(MarkConversationAsReadRequest) returns (MarkConversationAsReadResponse);
+  rpc GetUnreadCount(GetUnreadCountRequest) returns (GetUnreadCountResponse);
+  rpc GetUnreadCounts(GetUnreadCountsRequest) returns (GetUnreadCountsResponse);
 }
 
 message CreateConversationRequest {
@@ -29,6 +36,7 @@ message ConversationResponse {
   repeated Participant participants = 4;
   MessageResponse last_message = 5;
   string created_at = 6;
+  int32 unread_count = 7; 
 }
 
 message Participant {
@@ -58,6 +66,8 @@ message SendMessageRequest {
   string conversation_id = 1;
   string sender_id = 2;
   string content = 3;
+  string attachment_file_hash = 4; 
+  string attachment_object_name = 5; 
 }
 
 message MessageResponse {
@@ -66,8 +76,19 @@ message MessageResponse {
   string sender_id = 3;
   string content = 4;
   MessageResponse reply_to = 5;
-  PostResponse shared_post = 6; 
-  string created_at = 7;
+  PostResponse shared_post = 6;
+  AttachmentResponse attachment = 7;
+  string created_at = 8;
+}
+
+message AttachmentResponse {
+  string id = 1;
+  string file_type = 2;
+  string file_name = 3;
+  string mime_type = 4;
+  int64 file_size = 5;
+  string access_url = 6;
+  string thumbnail_access_url = 7;
 }
 
 message GetMessagesRequest {
@@ -130,10 +151,95 @@ message DeleteMessageResponse {
   string message = 2;
 }
 
+message DeleteConversationRequest {
+  string conversation_id = 1;
+  string user_id = 2;
+}
+
+message DeleteConversationResponse {
+  bool success = 1;
+  string message = 2;
+}
+
 message PostResponse {
   string id = 1;
   string user_id = 2;
   string content = 3;
   repeated string media_urls = 4;
+}
+
+message UploadMessageAttachmentRequest {
+  string file_name = 1;
+  string mime_type = 2;
+  int64 file_size = 3;
+  string user_id = 4;
+}
+
+message UploadMessageAttachmentResponse {
+  string upload_url = 1;
+  string object_name = 2;
+  string file_hash = 3;
+  int32 expires_in = 4; 
+}
+
+message UploadFileBufferRequest {
+  bytes file_data = 1;
+  string file_name = 2;
+  string mime_type = 3;
+  int64 file_size = 4;
+  string user_id = 5;
+  string object_name = 6; 
+}
+
+message UploadFileBufferResponse {
+  string object_name = 1;
+  string file_hash = 2;
+  bool success = 3;
+  string message = 4;
+}
+
+message GetMessageAttachmentRequest {
+  string attachment_id = 1;
+}
+
+message GetMessageAttachmentResponse {
+  string id = 1;
+  string message_id = 2;
+  string file_type = 3;
+  string file_name = 4;
+  string mime_type = 5;
+  int64 file_size = 6;
+  string file_hash = 7;
+  string object_name = 8;
+  string thumbnail_object_name = 9;
+  string access_url = 10;
+  string thumbnail_access_url = 11;
+}
+
+message MarkConversationAsReadRequest {
+  string conversation_id = 1;
+  string user_id = 2;
+}
+
+message MarkConversationAsReadResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GetUnreadCountRequest {
+  string conversation_id = 1;
+  string user_id = 2;
+}
+
+message GetUnreadCountResponse {
+  int32 count = 1;
+}
+
+message GetUnreadCountsRequest {
+  string user_id = 1;
+}
+
+message GetUnreadCountsResponse {
+  map<string, int32> unread_counts = 1; 
 }
 

@@ -39,6 +39,9 @@ export class ConversationParticipant {
   @Column({ type: 'boolean', default: true })
   isActive: boolean; // false if user left the group
 
+  @Column({ type: 'timestamp', nullable: true })
+  lastReadAt: Date | null; // todo Track when user last read messages in this conversation
+
   @ManyToOne(() => Conversation, (conversation) => conversation.participants, {
     onDelete: 'CASCADE',
   })

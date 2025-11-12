@@ -93,7 +93,7 @@ message CommentResponse {
   string created_at = 5;
   string parent_comment_id = 6; 
   repeated string mentions = 7;
-  int32 reply_count = 8;
+  int32 reply_count = 8; 
   bool is_deleted = 9;
 }
 

@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Param, Body, Query, UseGuards, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Query, UseGuards, Delete, Put, BadRequestException, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { MessageClientService } from '../clients/message-client.service';
 import { UserClientService } from '../clients/user-client.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -46,9 +47,15 @@ export class MessagesController {
       })
     );
     
+    // Get unread counts for all conversations
+    const unreadCounts = await this.messageClient.getUnreadCounts(currentUser.userId);
+
     return {
       ...result,
-      conversations: enrichedConversations,
+      conversations: enrichedConversations.map((conv) => ({
+        ...conv,
+        unread_count: unreadCounts[conv.id] || 0,
+      })),
     };
   }
 
@@ -106,14 +113,42 @@ export class MessagesController {
       parseInt(page || '1', 10),
       parseInt(limit || '50', 10),
     );
-    return result;
+    
+    const enrichedMessages = await Promise.all(
+      result.messages.map(async (message) => {
+        const senderProfile = await this.userClient.getProfile(message.senderId);
+        return {
+          id: message.id,
+          conversation_id: message.conversationId,
+          sender_id: message.senderId,
+          content: message.content,
+          reply_to_message_id: message.replyTo?.id || null,
+          created_at: message.createdAt,
+          attachment: message.attachment || null,
+          sender: {
+            username: senderProfile?.username || 'Unknown',
+            profile_picture: senderProfile?.profilePicture || '',
+          },
+        };
+      })
+    );
+    
+    return {
+      ...result,
+      messages: enrichedMessages,
+    };
   }
 
   @Post(':id/messages')
   async sendMessage(
     @Param('id') conversationId: string,
     @CurrentUser() currentUser: CurrentUserType,
-    @Body() body: { content: string; reply_to_message_id?: string },
+    @Body() body: {
+      content: string;
+      reply_to_message_id?: string;
+      attachment_file_hash?: string;
+      attachment_object_name?: string;
+    },
   ) {
     if (body.reply_to_message_id) {
       return await this.messageClient.replyToMessage(
@@ -123,7 +158,13 @@ export class MessagesController {
         body.reply_to_message_id,
       );
     } else {
-      return await this.messageClient.sendMessage(conversationId, currentUser.userId, body.content);
+      return await this.messageClient.sendMessage(
+        conversationId,
+        currentUser.userId,
+        body.content,
+        body.attachment_file_hash,
+        body.attachment_object_name,
+      );
     }
   }
 
@@ -193,6 +234,50 @@ export class MessagesController {
     return { success: true, message: 'Participant removed successfully' };
   }
 
+  @Delete(':id/messages/:messageId')
+  async deleteMessage(
+    @Param('id') conversationId: string,
+    @Param('messageId') messageId: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    await this.messageClient.deleteMessage(conversationId, messageId, currentUser.userId);
+    return { success: true, message: 'Message deleted successfully' };
+  }
+
+  @Delete(':id')
+  async deleteConversation(
+    @Param('id') conversationId: string,
+    @CurrentUser() currentUser: CurrentUserType,
+  ) {
+    await this.messageClient.deleteConversation(conversationId, currentUser.userId);
+    return { success: true, message: 'Conversation deleted successfully' };
+  }
+
+  @Post('attachments/upload-url')
+  async getUploadUrl(
+    @CurrentUser() currentUser: CurrentUserType,
+    @Body() body: { file_name: string; mime_type: string; file_size: number },
+  ) {
+    const result = await this.messageClient.uploadMessageAttachment(
+      body.file_name,
+      body.mime_type,
+      body.file_size,
+      currentUser.userId,
+    );
+
+    return {
+      upload_url: result.uploadUrl,
+      object_name: result.objectName,
+      file_hash: result.fileHash,
+      expires_in: result.expiresIn,
+    };
+  }
+
+  @Get('attachments/:attachmentId')
+  async getAttachment(@Param('attachmentId') attachmentId: string) {
+    return await this.messageClient.getMessageAttachment(attachmentId);
+  }
+
   @Get(':id')
   async getConversation(
     @Param('id') conversationId: string,
@@ -219,14 +304,19 @@ export class MessagesController {
     };
   }
 
-  @Delete(':id/messages/:messageId')
-  async deleteMessage(
+  @Post(':id/read')
+  async markAsRead(
     @Param('id') conversationId: string,
-    @Param('messageId') messageId: string,
     @CurrentUser() currentUser: CurrentUserType,
   ) {
-    await this.messageClient.deleteMessage(conversationId, messageId, currentUser.userId);
-    return { success: true, message: 'Message deleted successfully' };
+    await this.messageClient.markConversationAsRead(conversationId, currentUser.userId);
+    return { success: true, message: 'Conversation marked as read' };
+  }
+
+  @Get('unread-counts')
+  async getUnreadCounts(@CurrentUser() currentUser: CurrentUserType) {
+    const unreadCounts = await this.messageClient.getUnreadCounts(currentUser.userId);
+    return { unread_counts: unreadCounts };
   }
 }
 
