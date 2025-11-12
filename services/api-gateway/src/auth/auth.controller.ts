@@ -67,11 +67,10 @@ export class AuthController {
       };
     } catch (error: any) {
       console.error('[AuthController] Login error:', error);
-      // Re-throw NestJS exceptions as-is, otherwise wrap as 401
       if (error instanceof UnauthorizedException || error instanceof BadRequestException) {
         throw error;
       }
-      throw new UnauthorizedException(error.message || 'Login failed');
+      throw new UnauthorizedException('Unable to complete login. Please try again.');
     }
   }
 }

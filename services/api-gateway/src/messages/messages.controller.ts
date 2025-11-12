@@ -40,9 +40,21 @@ export class MessagesController {
           })
         );
         
+        // todo Normalize lastMessage
+        const lastMessage = (conversation as any).lastMessage || (conversation as any).last_message;
+        
         return {
-          ...conversation,
+          id: conversation.id,
+          type: conversation.type,
+          name: conversation.name,
+          created_at: conversation.createdAt,
           participants: enrichedParticipants,
+          last_message: lastMessage ? {
+            id: lastMessage.id,
+            content: lastMessage.content || '',
+            created_at: lastMessage.created_at || lastMessage.createdAt,
+            sender_id: lastMessage.sender_id || lastMessage.senderId,
+          } : null,
         };
       })
     );

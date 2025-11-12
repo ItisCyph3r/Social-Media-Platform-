@@ -57,11 +57,16 @@ export class AuthClientService implements OnModuleInit {
         { email, password, username: username || '' },
         (error, response) => {
           if (error) {
-            reject(error);
+            if (error.code === grpc.status.UNAVAILABLE || error.code === 14) {
+              reject(new BadRequestException('Authentication service is currently unavailable. Please try again later.'));
+            } else if (error.code === grpc.status.ALREADY_EXISTS || error.code === 6) {
+              reject(new BadRequestException('An account with this email already exists'));
+            } else {
+              reject(new BadRequestException('Unable to complete registration. Please try again.'));
+            }
           } else if (!response?.success) {
             reject(new BadRequestException(response?.message || 'Registration failed'));
           } else {
-            // After registration, login to get token
             this.login(email, password).then(resolve).catch(reject);
           }
         },
@@ -76,7 +81,13 @@ export class AuthClientService implements OnModuleInit {
         (error, response) => {
           if (error) {
             console.error('[AuthClientService] Login error:', error);
-            reject(error);
+            if (error.code === grpc.status.UNAVAILABLE || error.code === 14) {
+              reject(new UnauthorizedException('Authentication service is currently unavailable. Please try again later.'));
+            } else if (error.code === grpc.status.UNAUTHENTICATED || error.code === 16) {
+              reject(new UnauthorizedException('Invalid email or password'));
+            } else {
+              reject(new UnauthorizedException('Unable to complete login. Please try again.'));
+            }
           } else {
             // Debug: Log the entire response to see what we're getting
             // console.log('[AuthClientService] Full login response:', JSON.stringify(response, null, 2));
