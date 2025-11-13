@@ -7,7 +7,7 @@ import {
   Index,
 } from 'typeorm';
 
-@Entity('follows')
+@Entity({ name: 'follows', schema: 'user' })
 @Unique(['followerId', 'followingId'])
 @Index(['followerId'])
 @Index(['followingId'])

@@ -9,7 +9,7 @@ import {
 } from 'typeorm';
 import { Post } from './post.entity';
 
-@Entity('likes')
+@Entity({ name: 'likes', schema: 'post' })
 @Unique(['postId', 'userId'])
 @Index(['postId'])
 @Index(['userId'])

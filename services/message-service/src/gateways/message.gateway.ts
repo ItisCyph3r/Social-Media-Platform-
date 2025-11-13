@@ -12,6 +12,7 @@ import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { MessageService } from '../message/message.service';
 import { AuthClientService } from '../clients/auth-client.service';
 import { UserClientService } from '../clients/user-client.service';
+import { ConversationType } from '../entities/conversation.entity';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -222,7 +223,13 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
       const uniqueSenderIds = Array.from(new Set(result.messages.map(msg => msg.senderId)));
       const senderProfiles = await this.userClient.getProfiles(uniqueSenderIds);
 
-      const messagesData = {
+            // Get read status for messages
+            const messageIds = result.messages.map(m => m.id);
+            const readStatusMap = await this.messageService.getMessageReadStatus(messageIds);
+            const conversation = await this.messageService.getConversation(data.conversation_id, client.userId);
+            const isDirectChat = conversation.type === ConversationType.DIRECT;
+
+            const messagesData = {
         conversation_id: data.conversation_id,
         messages: await Promise.all(
           result.messages.map(async (msg) => {
@@ -258,6 +265,17 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
             // Get sender profile from batch-fetched profiles
             const senderProfile = senderProfiles.get(msg.senderId) || { username: 'Unknown', profile_picture: '' };
 
+            // Determine read status
+            // For direct chats: check msg.readAt
+            // For group chats: check if current user has read it
+            let isRead = false;
+            if (isDirectChat && msg.readAt) {
+              isRead = true;
+            } else if (!isDirectChat && client.userId) {
+              const readByUsers = readStatusMap.get(msg.id) || [];
+              isRead = readByUsers.includes(client.userId);
+            }
+
             return {
               id: msg.id,
               conversation_id: msg.conversationId,
@@ -267,6 +285,8 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
               attachment: attachmentData,
               sender: senderProfile,
               created_at: msg.createdAt.toISOString(),
+              read_at: msg.readAt ? msg.readAt.toISOString() : null,
+              is_read: isRead,
             };
           }),
         ),
@@ -348,7 +368,7 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
       conversationId,
     });
 
-    // Also send to user's other devices if not excluded
+    // Also send to user's other devices
     if (excludeUserId && this.server.sockets && this.server.sockets.sockets) {
       const userSockets = this.userSockets.get(excludeUserId);
       if (userSockets) {
@@ -369,6 +389,8 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
         });
       }
     }
+    
+    this.logger.log(`Broadcasted message ${message.id} to conversation ${conversationId}`);
   }
 
   /**
@@ -389,6 +411,57 @@ export class MessageGateway implements OnGatewayConnection, OnGatewayDisconnect 
       conversationId,
       messageId,
     });
+  }
+
+  /**
+   * Send read receipt event to all participants
+   */
+  async sendMessageReadReceipt(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+    readAt: Date,
+  ) {
+    this.server.to(`conversation:${conversationId}`).emit('message:read', {
+      conversationId,
+      messageId,
+      userId,
+      readAt: readAt.toISOString(),
+    });
+    this.logger.log(`Read receipt sent for message ${messageId} by user ${userId}`);
+  }
+
+  /**
+   * Mark conversation as read
+   */
+  @SubscribeMessage('mark_read')
+  async handleMarkRead(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: { conversation_id?: string; conversationId?: string; message_id?: string; messageId?: string },
+  ) {
+    if (!client.userId) {
+      return { error: 'Not authenticated' };
+    }
+
+    const conversationId = data.conversation_id || data.conversationId;
+    const messageId = data.message_id || data.messageId;
+
+    try {
+      if (messageId) {
+        // Mark specific message as read
+        await this.messageService.markMessageAsRead(messageId, client.userId);
+        return { success: true, messageId };
+      } else if (conversationId) {
+        // Mark entire conversation as read
+        await this.messageService.markConversationAsRead(conversationId, client.userId);
+        return { success: true, conversationId };
+      } else {
+        return { error: 'conversation_id or message_id is required' };
+      }
+    } catch (error: any) {
+      this.logger.error(`Error marking as read: ${error.message}`);
+      return { error: error.message || 'Failed to mark as read' };
+    }
   }
 }
 

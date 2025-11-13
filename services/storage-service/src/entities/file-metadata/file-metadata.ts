@@ -7,7 +7,7 @@ import {
   Index,
 } from 'typeorm';
 
-@Entity('file_metadata')
+@Entity({ name: 'file_metadata', schema: 'storage' })
 @Index(['fileHash'])
 @Index(['serviceContexts'])
 @Index(['createdAt'])

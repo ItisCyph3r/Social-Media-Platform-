@@ -15,7 +15,7 @@ export enum ConversationType {
   GROUP = 'group',
 }
 
-@Entity('conversations')
+@Entity({ name: 'conversations', schema: 'message' })
 @Index(['type', 'createdAt'])
 export class Conversation {
   @PrimaryGeneratedColumn('uuid')

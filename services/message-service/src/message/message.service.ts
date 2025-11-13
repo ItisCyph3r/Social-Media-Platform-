@@ -12,6 +12,7 @@ import { ConversationParticipant, ParticipantRole } from '../entities/conversati
 import { Message } from '../entities/message.entity';
 import { SharedPost } from '../entities/shared-post.entity';
 import { MessageAttachment } from '../entities/message-attachment.entity';
+import { MessageReadReceipt } from '../entities/message-read-receipt.entity';
 import { EventPublisherService } from '../events/event-publisher.service';
 import { MessageGateway } from '../gateways/message.gateway';
 import { MessageAttachmentService } from '../attachments/message-attachment.service';
@@ -33,6 +34,8 @@ export class MessageService {
     private sharedPostRepository: Repository<SharedPost>,
     @InjectRepository(MessageAttachment)
     private attachmentRepository: Repository<MessageAttachment>,
+    @InjectRepository(MessageReadReceipt)
+    private readReceiptRepository: Repository<MessageReadReceipt>,
     private eventPublisher: EventPublisherService,
     @Inject(forwardRef(() => MessageGateway))
     private messageGateway: MessageGateway,
@@ -217,31 +220,31 @@ export class MessageService {
     attachmentMimeType?: string,
     replyToMessageId?: string,
   ): Promise<Message> {
-    // Verify sender is a participant
-    const participant = await this.participantRepository.findOne({
-      where: {
-        conversationId,
-        userId: senderId,
-        isActive: true,
-      },
-    });
+    // Parallelize participant check and reply message check for better performance
+    const [participant, replyToMessage] = await Promise.all([
+      this.participantRepository.findOne({
+        where: {
+          conversationId,
+          userId: senderId,
+          isActive: true,
+        },
+      }),
+      replyToMessageId
+        ? this.messageRepository.findOne({
+            where: {
+              id: replyToMessageId,
+              conversationId,
+            },
+          })
+        : Promise.resolve(null),
+    ]);
 
     if (!participant) {
       throw new NotFoundException('User is not a participant in this conversation');
     }
 
-    // Verify reply-to message if provided
-    if (replyToMessageId) {
-      const replyToMessage = await this.messageRepository.findOne({
-        where: {
-          id: replyToMessageId,
-          conversationId,
-        },
-      });
-
-      if (!replyToMessage) {
-        throw new NotFoundException('Message to reply to not found');
-      }
+    if (replyToMessageId && !replyToMessage) {
+      throw new NotFoundException('Message to reply to not found');
     }
 
     // Create message
@@ -309,106 +312,133 @@ export class MessageService {
       }
     }
 
-    await this.conversationRepository.update(conversationId, { updatedAt: new Date() });
-
-    // Load attachment and reply if exists for WebSocket broadcast
-    const messageWithAttachment = await this.messageRepository.findOne({
-      where: { id: savedMessage.id },
-      relations: ['attachment', 'replyToMessage', 'replyToMessage.attachment'],
-    });
-
-    let attachmentData: any = null;
-    if (messageWithAttachment?.attachment) {
-      const attachment = messageWithAttachment.attachment;
-      const accessUrl = await this.attachmentService.getFileAccessUrl(attachment.objectName);
-      let thumbnailAccessUrl: string | null = null;
-      if (attachment.thumbnailObjectName) {
-        thumbnailAccessUrl = await this.attachmentService.getFileAccessUrl(
-          attachment.thumbnailObjectName,
-        );
-      }
-
-      attachmentData = {
-        id: attachment.id,
-        file_type: attachment.fileType,
-        file_name: attachment.fileName,
-        mime_type: attachment.mimeType,
-        file_size: attachment.fileSize.toString(),
-        access_url: accessUrl,
-        thumbnail_access_url: thumbnailAccessUrl,
-      };
-    }
-
-    // Fetch sender profile
-    const senderProfile = await this.userClient.getProfile(senderId);
-    const senderData = senderProfile
-      ? { username: senderProfile.username, profile_picture: senderProfile.profilePicture }
-      : { username: 'Unknown', profile_picture: '' };
-
-    // Prepare reply_to data with attachment if exists
-    let replyToData: any = null;
-    if (messageWithAttachment?.replyToMessage) {
-      const replyToMsg = messageWithAttachment.replyToMessage;
-      let replyAttachmentData: any = null;
-      
-      if (replyToMsg.attachment) {
-        const replyAttachment = replyToMsg.attachment;
-        const replyAccessUrl = await this.attachmentService.getFileAccessUrl(replyAttachment.objectName);
-        let replyThumbnailAccessUrl: string | null = null;
-        if (replyAttachment.thumbnailObjectName) {
-          replyThumbnailAccessUrl = await this.attachmentService.getFileAccessUrl(
-            replyAttachment.thumbnailObjectName,
-          );
-        }
-
-        replyAttachmentData = {
-          id: replyAttachment.id,
-          file_type: replyAttachment.fileType,
-          file_name: replyAttachment.fileName,
-          mime_type: replyAttachment.mimeType,
-          file_size: replyAttachment.fileSize.toString(),
-          access_url: replyAccessUrl,
-          thumbnail_access_url: replyThumbnailAccessUrl,
-        };
-      }
-
-      // Fetch reply-to message sender profile
-      const replySenderProfile = await this.userClient.getProfile(replyToMsg.senderId);
-      const replySenderData = replySenderProfile
-        ? { username: replySenderProfile.username, profile_picture: replySenderProfile.profilePicture }
-        : { username: 'Unknown', profile_picture: '' };
-
-      replyToData = {
-        id: replyToMsg.id,
-        conversation_id: replyToMsg.conversationId,
-        sender_id: replyToMsg.senderId,
-        content: replyToMsg.content,
-        reply_to: null,
-        shared_post: null,
-        attachment: replyAttachmentData,
-        sender: replySenderData,
-        created_at: replyToMsg.createdAt.toISOString(),
-      };
-    }
-
-    // Send real-time message via WebSocket
-    await this.messageGateway.sendMessageToConversation(
-      conversationId,
-      {
-        id: savedMessage.id,
-        conversation_id: savedMessage.conversationId,
-        sender_id: savedMessage.senderId,
-        content: savedMessage.content,
-        reply_to: replyToData,
-        shared_post: null,
-        attachment: attachmentData,
-        sender: senderData,
-        created_at: savedMessage.createdAt.toISOString(),
-      },
-      senderId,
+    // Update conversation timestamp 
+    this.conversationRepository.update(conversationId, { updatedAt: new Date() }).catch(
+      (error) => this.logger.error(`Failed to update conversation timestamp: ${error.message}`),
     );
 
-    // Publish message.received event for all other participants
+    // Enrich and broadcast message in background
+    this.enrichAndBroadcastMessage(savedMessage, conversationId, senderId, replyToMessageId).catch(
+      (error) => this.logger.error(`Failed to enrich and broadcast message: ${error.message}`),
+    );
+
+    return savedMessage;
+  }
+
+  /**
+   * Enrich message with profiles and attachments, then broadcast via WebSocket
+   * This runs in the background to avoid blocking the main sendMessage response
+   */
+  private async enrichAndBroadcastMessage(
+    savedMessage: Message,
+    conversationId: string,
+    senderId: string,
+    replyToMessageId?: string,
+  ): Promise<void> {
+    try {
+      // Load attachment and reply if exists for WebSocket broadcast
+      const messageWithAttachment = await this.messageRepository.findOne({
+        where: { id: savedMessage.id },
+        relations: ['attachment', 'replyToMessage', 'replyToMessage.attachment'],
+      });
+
+      // Parallelize all enrichment operations
+      const [senderProfile, attachmentData, replyToData] = await Promise.all([
+        this.userClient.getProfile(senderId),
+        this.getAttachmentData(messageWithAttachment?.attachment),
+        messageWithAttachment?.replyToMessage
+          ? this.getReplyToData(messageWithAttachment.replyToMessage)
+          : Promise.resolve(null),
+      ]);
+
+      const senderData = senderProfile
+        ? { username: senderProfile.username, profile_picture: senderProfile.profilePicture }
+        : { username: 'Unknown', profile_picture: '' };
+
+      // Send real-time message via WebSocket
+      await this.messageGateway.sendMessageToConversation(
+        conversationId,
+        {
+          id: savedMessage.id,
+          conversation_id: savedMessage.conversationId,
+          sender_id: savedMessage.senderId,
+          content: savedMessage.content,
+          reply_to: replyToData,
+          shared_post: null,
+          attachment: attachmentData,
+          sender: senderData,
+          created_at: savedMessage.createdAt.toISOString(),
+        },
+        senderId,
+      );
+
+      // Publish message.received event for all other participants 
+      this.publishNotifications(savedMessage, conversationId, senderId).catch(
+        (error) => this.logger.error(`Failed to publish notifications: ${error.message}`),
+      );
+    } catch (error) {
+      this.logger.error(`Error enriching and broadcasting message: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get attachment data with URLs
+   */
+  private async getAttachmentData(attachment: any): Promise<any> {
+    if (!attachment) return null;
+
+    const [accessUrl, thumbnailAccessUrl] = await Promise.all([
+      this.attachmentService.getFileAccessUrl(attachment.objectName),
+      attachment.thumbnailObjectName
+        ? this.attachmentService.getFileAccessUrl(attachment.thumbnailObjectName)
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      id: attachment.id,
+      file_type: attachment.fileType,
+      file_name: attachment.fileName,
+      mime_type: attachment.mimeType,
+      file_size: attachment.fileSize.toString(),
+      access_url: accessUrl,
+      thumbnail_access_url: thumbnailAccessUrl,
+    };
+  }
+
+  /**
+   * Get reply-to message data with attachment and sender profile
+   */
+  private async getReplyToData(replyToMsg: any): Promise<any> {
+    const [replyAttachmentData, replySenderProfile] = await Promise.all([
+      replyToMsg.attachment ? this.getAttachmentData(replyToMsg.attachment) : Promise.resolve(null),
+      this.userClient.getProfile(replyToMsg.senderId), // Cached
+    ]);
+
+    const replySenderData = replySenderProfile
+      ? { username: replySenderProfile.username, profile_picture: replySenderProfile.profilePicture }
+      : { username: 'Unknown', profile_picture: '' };
+
+    return {
+      id: replyToMsg.id,
+      conversation_id: replyToMsg.conversationId,
+      sender_id: replyToMsg.senderId,
+      content: replyToMsg.content,
+      reply_to: null,
+      shared_post: null,
+      attachment: replyAttachmentData,
+      sender: replySenderData,
+      created_at: replyToMsg.createdAt.toISOString(),
+    };
+  }
+
+  /**
+   * Publish notifications for message recipients (non-blocking)
+   */
+  private async publishNotifications(
+    savedMessage: Message,
+    conversationId: string,
+    senderId: string,
+  ): Promise<void> {
     const participants = await this.participantRepository.find({
       where: {
         conversationId,
@@ -417,16 +447,18 @@ export class MessageService {
       },
     });
 
-    for (const participant of participants) {
-      await this.eventPublisher.publishMessageReceived(
+    // Publish all notifications in parallel (non-blocking)
+    const publishPromises = participants.map((participant) =>
+      this.eventPublisher.publishMessageReceived(
         savedMessage.id,
         conversationId,
         senderId,
         participant.userId,
-      );
-    }
+        savedMessage.content,
+      ),
+    );
 
-    return savedMessage;
+    await Promise.all(publishPromises);
   }
 
   /**
@@ -565,6 +597,7 @@ export class MessageService {
         conversationId,
         senderId,
         participant.userId,
+        messageWithReply.content,
       );
     }
 
@@ -664,6 +697,7 @@ export class MessageService {
         conversationId,
         senderId,
         participant.userId,
+        messageWithSharedPost.content,
       );
     }
 
@@ -753,8 +787,153 @@ export class MessageService {
       throw new NotFoundException('User is not a participant in this conversation');
     }
 
-    participant.lastReadAt = new Date();
+    const now = new Date();
+    participant.lastReadAt = now;
     await this.participantRepository.save(participant);
+
+    // Mark all unread messages in this conversation as read
+    const unreadMessages = await this.messageRepository.find({
+      where: {
+        conversationId,
+        senderId: Not(userId), // Only mark messages from others as read
+      },
+      relations: ['conversation'],
+    });
+
+    if (unreadMessages.length > 0) {
+      const conversation = await this.conversationRepository.findOne({
+        where: { id: conversationId },
+        relations: ['participants'],
+      });
+
+      if (conversation) {
+        const isDirectChat = conversation.type === ConversationType.DIRECT;
+        
+        // For direct chats, update message.readAt directly
+        if (isDirectChat) {
+          await this.messageRepository.update(
+            { id: In(unreadMessages.map(m => m.id)) },
+            { readAt: now },
+          );
+        }
+
+        // For all chats, create read receipts
+        const readReceipts = unreadMessages.map((message) => {
+          const receipt = new MessageReadReceipt();
+          receipt.messageId = message.id;
+          receipt.userId = userId;
+          receipt.readAt = now;
+          return receipt;
+        });
+
+        // Use upsert to avoid duplicates
+        await this.readReceiptRepository
+          .createQueryBuilder()
+          .insert()
+          .into(MessageReadReceipt)
+          .values(readReceipts)
+          .orIgnore()
+          .execute();
+
+        // Emit read receipt events for all marked messages
+        for (const message of unreadMessages) {
+          await this.messageGateway.sendMessageReadReceipt(
+            conversationId,
+            message.id,
+            userId,
+            now,
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Mark a specific message as read
+   */
+  async markMessageAsRead(messageId: string, userId: string): Promise<void> {
+    const message = await this.messageRepository.findOne({
+      where: { id: messageId },
+      relations: ['conversation'],
+    });
+
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+
+    // Check if user is a participant
+    const participant = await this.participantRepository.findOne({
+      where: {
+        conversationId: message.conversationId,
+        userId,
+        isActive: true,
+      },
+    });
+
+    if (!participant) {
+      throw new NotFoundException('User is not a participant in this conversation');
+    }
+
+    // Don't mark own messages as read
+    if (message.senderId === userId) {
+      return;
+    }
+
+    const now = new Date();
+    const conversation = await this.conversationRepository.findOne({
+      where: { id: message.conversationId },
+    });
+
+    if (conversation) {
+      const isDirectChat = conversation.type === ConversationType.DIRECT;
+
+      // For direct chats, update message.readAt
+      if (isDirectChat) {
+        await this.messageRepository.update(
+          { id: messageId },
+          { readAt: now },
+        );
+      }
+
+      // Create read receipt
+      const existingReceipt = await this.readReceiptRepository.findOne({
+        where: { messageId, userId },
+      });
+
+      if (!existingReceipt) {
+        const receipt = new MessageReadReceipt();
+        receipt.messageId = messageId;
+        receipt.userId = userId;
+        receipt.readAt = now;
+        await this.readReceiptRepository.save(receipt);
+
+        // Emit read receipt event
+        await this.messageGateway.sendMessageReadReceipt(
+          message.conversationId,
+          messageId,
+          userId,
+          now,
+        );
+      }
+    }
+  }
+
+  /**
+   * Get read status for messages (which users have read each message)
+   */
+  async getMessageReadStatus(messageIds: string[]): Promise<Map<string, string[]>> {
+    const receipts = await this.readReceiptRepository.find({
+      where: { messageId: In(messageIds) },
+    });
+
+    const statusMap = new Map<string, string[]>();
+    for (const receipt of receipts) {
+      const existing = statusMap.get(receipt.messageId) || [];
+      existing.push(receipt.userId);
+      statusMap.set(receipt.messageId, existing);
+    }
+
+    return statusMap;
   }
 
   /**

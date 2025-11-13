@@ -8,7 +8,7 @@ import {
   Index,
 } from 'typeorm';
 
-@Entity('notification_preferences')
+@Entity({ name: 'notification_preferences', schema: 'notification' })
 @Unique(['userId', 'type'])
 @Index(['userId'])
 export class NotificationPreference {

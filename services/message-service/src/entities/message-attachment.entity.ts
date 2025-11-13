@@ -9,7 +9,7 @@ import {
 } from 'typeorm';
 import { Message } from './message.entity';
 
-@Entity('message_attachments')
+@Entity({ name: 'message_attachments', schema: 'message' })
 @Index(['messageId'])
 @Index(['fileHash']) 
 @Index(['createdAt']) 

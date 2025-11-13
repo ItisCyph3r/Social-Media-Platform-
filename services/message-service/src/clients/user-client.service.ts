@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { join } from 'path';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
+import { UserCacheService } from '../cache/user-cache.service';
 
 interface UserServiceClient {
   GetUserProfile(
@@ -15,7 +16,10 @@ interface UserServiceClient {
 export class UserClientService implements OnModuleInit {
   private userService: UserServiceClient;
 
-  constructor(private configService: ConfigService) {}
+  constructor(
+    private configService: ConfigService,
+    private userCache: UserCacheService,
+  ) {}
 
   async onModuleInit() {
     const userServiceUrl = this.configService.get<string>('USER_SERVICE_GRPC_URL') || 'localhost:5002';
@@ -47,25 +51,31 @@ export class UserClientService implements OnModuleInit {
     profilePicture: string;
     createdAt: string;
   } | null> {
-    return new Promise((resolve) => {
-      this.userService.GetUserProfile(
-        { user_id: userId },
-        (error, response) => {
-          if (error || !response) {
-            resolve(null);
-          } else {
-            resolve({
-              id: response.id,
-              userId: response.user_id,
-              username: response.username,
-              bio: response.bio || '',
-              profilePicture: response.profile_picture || '',
-              createdAt: response.created_at,
-            });
-          }
-        },
-      );
-    });
+    return this.userCache.getOrSetProfile(
+      userId,
+      async () => {
+        return new Promise((resolve) => {
+          this.userService.GetUserProfile(
+            { user_id: userId },
+            (error, response) => {
+              if (error || !response) {
+                resolve(null);
+              } else {
+                const profile = {
+                  id: response.id,
+                  userId: response.user_id,
+                  username: response.username,
+                  bio: response.bio || '',
+                  profilePicture: response.profile_picture || '',
+                  createdAt: response.created_at,
+                };
+                resolve(profile);
+              }
+            },
+          );
+        });
+      },
+    );
   }
 
   /**

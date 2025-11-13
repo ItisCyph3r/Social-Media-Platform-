@@ -54,6 +54,7 @@ export class EventPublisherService implements OnModuleInit, OnModuleDestroy {
     conversationId: string,
     senderId: string,
     recipientId: string,
+    messageContent?: string,
   ) {
     if (!this.channel) {
       console.error('[EventPublisher] Channel not initialized');
@@ -67,6 +68,7 @@ export class EventPublisherService implements OnModuleInit, OnModuleDestroy {
         conversationId,
         senderId,
         recipientId,
+        messageContent: messageContent || '',
         timestamp: new Date().toISOString(),
       };
 

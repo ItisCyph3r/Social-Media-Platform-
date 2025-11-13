@@ -13,7 +13,7 @@ import { Conversation } from './conversation.entity';
 import { SharedPost } from './shared-post.entity';
 import { MessageAttachment } from './message-attachment.entity';
 
-@Entity('messages')
+@Entity({ name: 'messages', schema: 'message' })
 @Index(['conversationId', 'createdAt'])
 @Index(['senderId', 'createdAt'])
 @Index(['replyToMessageId'])
@@ -59,6 +59,9 @@ export class Message {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  readAt: Date | null; 
 }
 
 

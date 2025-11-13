@@ -3,15 +3,18 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
-  OneToOne,
+  ManyToOne,
   JoinColumn,
   Index,
+  Unique,
 } from 'typeorm';
 import { Message } from './message.entity';
 
-@Entity({ name: 'shared_posts', schema: 'message' })
-@Index(['postId', 'messageId'])
-export class SharedPost {
+@Entity({ name: 'message_read_receipts', schema: 'message' })
+@Unique(['messageId', 'userId']) 
+@Index(['messageId', 'readAt'])
+@Index(['userId', 'readAt'])
+export class MessageReadReceipt {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -19,21 +22,16 @@ export class SharedPost {
   messageId: string;
 
   @Column({ type: 'uuid' })
-  postId: string; // Post ID from Post Service
+  userId: string; 
 
-  @Column({ type: 'uuid' })
-  sharedByUserId: string; // User who shared the post
+  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  readAt: Date;
 
-  @OneToOne(() => Message, (message) => message.sharedPost, {
-    onDelete: 'CASCADE',
-  })
+  @ManyToOne(() => Message, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'messageId' })
   message: Message;
 
   @CreateDateColumn()
   createdAt: Date;
 }
-
-
-
 

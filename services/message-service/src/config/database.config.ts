@@ -5,9 +5,10 @@ import { ConversationParticipant } from '../entities/conversation-participant.en
 import { Message } from '../entities/message.entity';
 import { SharedPost } from '../entities/shared-post.entity';
 import { MessageAttachment } from '../entities/message-attachment.entity';
+import { MessageReadReceipt } from '../entities/message-read-receipt.entity';
 
 export const databaseConfig = (configService: ConfigService): TypeOrmModuleOptions => {
-  const databaseUrl = configService.get<string>('DATABASE_URL');
+  const databaseUrl = configService.get<string>('DATABASE_URL') || 'postgresql://postgres:postgres@localhost:9730/smp_db';
 
   if (databaseUrl) {
     const safeUrl = databaseUrl.replace(/:[^:@]+@/, ':****@');
@@ -19,7 +20,8 @@ export const databaseConfig = (configService: ConfigService): TypeOrmModuleOptio
   return {
     type: 'postgres',
     url: databaseUrl,
-    entities: [Conversation, ConversationParticipant, Message, SharedPost, MessageAttachment],
+    schema: 'message',
+    entities: [Conversation, ConversationParticipant, Message, SharedPost, MessageAttachment, MessageReadReceipt],
     synchronize: configService.get<string>('NODE_ENV') !== 'production',
     logging: false, 
   };

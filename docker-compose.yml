@@ -1,102 +1,141 @@
 services:
-  # Databases
-  postgres-auth:
+  # PostgreSQL Database
+  postgres-unified:
     image: postgres:15-alpine
-    container_name: postgres-auth
+    container_name: postgres-unified
     environment:
-      POSTGRES_DB: auth_db
+      POSTGRES_DB: smp_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "9732:5432"
+      - "9730:5432"
     volumes:
-      - postgres-auth-data:/var/lib/postgresql/data
+      - postgres-unified-data:/var/lib/postgresql/data
+      - ./scripts/init-schemas.sql:/docker-entrypoint-initdb.d/init-schemas.sql
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  postgres-user:
-    image: postgres:15-alpine
-    container_name: postgres-user
+  # pgAdmin 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
     environment:
-      POSTGRES_DB: user_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      PGADMIN_DEFAULT_EMAIL: admin@smp.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
     ports:
-      - "9733:5432"
+      - "5050:80"
     volumes:
-      - postgres-user-data:/var/lib/postgresql/data
+      - pgadmin-data:/var/lib/pgadmin
     networks:
       - app-network
+    depends_on:
+      postgres-unified:
+        condition: service_healthy
 
-  postgres-post:
-    image: postgres:15-alpine
-    container_name: postgres-post
-    environment:
-      POSTGRES_DB: post_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "9734:5432"
-    volumes:
-      - postgres-post-data:/var/lib/postgresql/data
-    networks:
-      - app-network
+  # postgres-auth:
+  #   image: postgres:15-alpine
+  #   container_name: postgres-auth
+  #   environment:
+  #     POSTGRES_DB: auth_db
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   ports:
+  #     - "9732:5432"
+  #   volumes:
+  #     - postgres-auth-data:/var/lib/postgresql/data
+  #   networks:
+  #     - app-network
 
-  postgres-message:
-    image: postgres:15-alpine
-    container_name: postgres-message
-    environment:
-      POSTGRES_DB: message_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "9735:5432"
-    volumes:
-      - postgres-message-data:/var/lib/postgresql/data
-    networks:
-      - app-network
+  # postgres-user:
+  #   image: postgres:15-alpine
+  #   container_name: postgres-user
+  #   environment:
+  #     POSTGRES_DB: user_db
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   ports:
+  #     - "9733:5432"
+  #   volumes:
+  #     - postgres-user-data:/var/lib/postgresql/data
+  #   networks:
+  #     - app-network
 
-  postgres-analytics:
-    image: postgres:15-alpine
-    container_name: postgres-analytics
-    environment:
-      POSTGRES_DB: analytics_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "9737:5432"
-    volumes:
-      - postgres-analytics-data:/var/lib/postgresql/data
-    networks:
-      - app-network
+  # postgres-post:
+  #   image: postgres:15-alpine
+  #   container_name: postgres-post
+  #   environment:
+  #     POSTGRES_DB: post_db
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   ports:
+  #     - "9734:5432"
+  #   volumes:
+  #     - postgres-post-data:/var/lib/postgresql/data
+  #   networks:
+  #     - app-network
 
-  postgres-notification:
-    image: postgres:15-alpine
-    container_name: postgres-notification
-    environment:
-      POSTGRES_DB: notification_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "9738:5432"
-    volumes:
-      - postgres-notification-data:/var/lib/postgresql/data
-    networks:
-      - app-network
+  # postgres-message:
+  #   image: postgres:15-alpine
+  #   container_name: postgres-message
+  #   environment:
+  #     POSTGRES_DB: message_db
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   ports:
+  #     - "9735:5432"
+  #   volumes:
+  #     - postgres-message-data:/var/lib/postgresql/data
+  #   networks:
+  #     - app-network
 
-  postgres-storage:
-    image: postgres:15-alpine
-    container_name: postgres-storage
-    environment:
-      POSTGRES_DB: storage_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "9736:5432"
-    volumes:
-      - postgres-storage-data:/var/lib/postgresql/data
-    networks:
-      - app-network
+  # postgres-analytics:
+  #   image: postgres:15-alpine
+  #   container_name: postgres-analytics
+  #   environment:
+  #     POSTGRES_DB: analytics_db
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   ports:
+  #     - "9737:5432"
+  #   volumes:
+  #     - postgres-analytics-data:/var/lib/postgresql/data
+  #   networks:
+  #     - app-network
+
+  # postgres-notification:
+  #   image: postgres:15-alpine
+  #   container_name: postgres-notification
+  #   environment:
+  #     POSTGRES_DB: notification_db
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   ports:
+  #     - "9738:5432"
+  #   volumes:
+  #     - postgres-notification-data:/var/lib/postgresql/data
+  #   networks:
+  #     - app-network
+
+  # postgres-storage:
+  #   image: postgres:15-alpine
+  #   container_name: postgres-storage
+  #   environment:
+  #     POSTGRES_DB: storage_db
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   ports:
+  #     - "9736:5432"
+  #   volumes:
+  #     - postgres-storage-data:/var/lib/postgresql/data
+  #   networks:
+  #     - app-network
 
   # Redis
   redis:
@@ -124,33 +163,36 @@ services:
     networks:
       - app-network
 
-  # MinIO
-  minio:
-    image: minio/minio:latest
-    container_name: minio
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio-data:/data
-    networks:
-      - app-network
+  # # MinIO
+  # minio:
+  #   image: minio/minio:latest
+  #   container_name: minio
+  #   command: server /data --console-address ":9001"
+  #   environment:
+  #     MINIO_ROOT_USER: minioadmin
+  #     MINIO_ROOT_PASSWORD: minioadmin
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+  #   volumes:
+  #     - minio-data:/data
+  #   networks:
+  #     - app-network
 
 volumes:
-  postgres-auth-data:
-  postgres-user-data:
-  postgres-post-data:
-  postgres-message-data:
-  postgres-analytics-data:
-  postgres-notification-data:
-  postgres-storage-data:
+  postgres-unified-data:
+  pgadmin-data:
+  # Legacy volumes (can be removed after migration)
+  # postgres-auth-data:
+  # postgres-user-data:
+  # postgres-post-data:
+  # postgres-message-data:
+  # postgres-analytics-data:
+  # postgres-notification-data:
+  # postgres-storage-data:
   redis-data:
   rabbitmq-data:
-  minio-data:
+  # minio-data:
 
 networks:
   app-network:

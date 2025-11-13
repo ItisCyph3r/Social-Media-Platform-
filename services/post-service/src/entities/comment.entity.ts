@@ -9,7 +9,7 @@ import {
 } from 'typeorm';
 import { Post } from './post.entity';
 
-@Entity('comments')
+@Entity({ name: 'comments', schema: 'post' })
 @Index(['postId', 'parentCommentId', 'createdAt']) 
 @Index(['parentCommentId']) 
 @Index(['userId'])

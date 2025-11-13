@@ -15,7 +15,7 @@ export enum ParticipantRole {
   MEMBER = 'member',
 }
 
-@Entity('conversation_participants')
+@Entity({ name: 'conversation_participants', schema: 'message' })
 @Unique(['conversationId', 'userId'])
 @Index(['userId', 'joinedAt'])
 @Index(['conversationId'])

@@ -7,7 +7,7 @@ import {
   Index,
 } from 'typeorm';
 
-@Entity('notifications')
+@Entity({ name: 'notifications', schema: 'notification' })
 @Index(['userId', 'read'])
 @Index(['userId', 'createdAt'])
 @Index(['type', 'relatedId'])

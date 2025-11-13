@@ -4,7 +4,7 @@ import { Notification } from '../entities/notification.entity';
 import { NotificationPreference } from '../entities/notification-preference.entity';
 
 export const databaseConfig = (configService: ConfigService): TypeOrmModuleOptions => {
-  const databaseUrl = configService.get<string>('DATABASE_URL');
+  const databaseUrl = configService.get<string>('DATABASE_URL') || 'postgresql://postgres:postgres@localhost:9730/smp_db';
 
   if (databaseUrl) {
     const safeUrl = databaseUrl.replace(/:[^:@]+@/, ':****@');
@@ -16,6 +16,7 @@ export const databaseConfig = (configService: ConfigService): TypeOrmModuleOptio
   return {
     type: 'postgres',
     url: databaseUrl,
+    schema: 'notification',
     entities: [Notification, NotificationPreference],
     synchronize: configService.get<string>('NODE_ENV') !== 'production',
     logging: false, // Disable SQL query logging
